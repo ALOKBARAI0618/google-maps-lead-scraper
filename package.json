@@ -1,0 +1,15 @@
+{
+  "name": "maps-lead-scraper-agent",
+  "version": "1.0.0",
+  "description": "Standalone Google Maps lead scraper using Playwright - fire and forget",
+  "main": "scraper.js",
+  "scripts": {
+    "scrape": "node scraper.js",
+    "call": "node lead-caller.js",
+    "install-browser": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "playwright": "^1.52.0"
+  }
+}

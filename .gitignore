@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Private & Scraped Leads Data (Protects Real Phone Numbers & Emails)
+output/
+Mumbai Data.xlsx
+*.csv
+*.BACKUP-*.xlsx
+
+# Ignore all other .xlsx files except sample-leads.xlsx
+*.xlsx
+!sample-leads.xlsx
+
+# Environment & Secrets
+.env
+.env.*
+*.log
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
