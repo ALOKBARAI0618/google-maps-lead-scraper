@@ -51,7 +51,7 @@
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/your-username/google-maps-lead-scraper.git
+git clone https://github.com/ALOKBARAI0618/google-maps-lead-scraper.git
 cd google-maps-lead-scraper
 ```
 
@@ -176,7 +176,7 @@ Every exported Excel file is formatted with:
 ## 🤝 Contributing
 
 Contributions, issues, and feature requests are welcome!
-Feel free to check the [issues page](https://github.com/your-username/google-maps-lead-scraper/issues).
+Feel free to check the [issues page](https://github.com/ALOKBARAI0618/google-maps-lead-scraper/issues).
 
 1. Fork the Project
 2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
