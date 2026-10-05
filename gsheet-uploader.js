@@ -6,10 +6,7 @@ const SERVICE_ACCOUNT_KEY = {
   "type": "service_account",
   "project_id": "REPLACE_ME",
   "private_key_id": "REPLACE_ME",
-  "private_key": "-----BEGIN PRIVATE KEY-----
-REPLACE_ME
------END PRIVATE KEY-----
-",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nREPLACE_ME\n-----END PRIVATE KEY-----\n",
   "client_email": "REPLACE_ME@REPLACE_ME.iam.gserviceaccount.com",
   "client_id": "REPLACE_ME",
   "auth_uri": "https://accounts.google.com/o/oauth2/auth",
