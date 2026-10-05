@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Email Campaign Tool — Cotech</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *{font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+  .mono{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace}
+  .hint{font-size:11px;color:#94a3b8}
+  .card{transition:box-shadow .15s}
+  .card:hover{box-shadow:0 6px 20px rgba(15,23,42,.07)}
+</style>
+</head>
+<body class="bg-[#f8fafc] text-slate-900 antialiased">
+<div class="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
+
+<header class="bg-white border border-slate-200 rounded-2xl p-4 md:p-5 shadow-sm flex items-center gap-4">
+  <img src="/cotech-logo-400.png" alt="Cotech" class="h-10 w-auto" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'"><div class="h-10 w-10 rounded-xl bg-slate-900 hidden place-items-center text-white font-extrabold text-sm">Co</div>
+  <div class="min-w-0">
+    <h1 class="text-[15px] font-extrabold tracking-tight leading-none">Email Campaign Tool</h1>
+    <p class="text-xs text-slate-500 mt-1">Standalone &middot; reads <span class="mono bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[11px]">output/*.xlsx</span> + Google Sheet <span class="mono bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[11px]">Status</span> &middot; no scraper needed</p>
+  </div>
+  <div class="ml-auto flex items-center gap-2">
+    <span id="healthDot" class="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600 border-slate-200">-</span>
+    <a href="/api/config" target="_blank" class="hidden md:inline-flex text-xs font-medium text-slate-500 hover:text-slate-700 underline underline-offset-4">config</a>
+  </div>
+</header>
+<nav id="tabNav" class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-2xl p-1.5 shadow-sm sticky top-[env(safe-area-inset-top,0px)] z-20">
+  <button data-tab="compose" class="tab-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-extrabold tracking-widest uppercase bg-slate-900 text-white shadow-sm" aria-selected="true">Compose &amp; Send</button>
+  <button data-tab="templates" class="tab-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-extrabold tracking-widest uppercase text-slate-600 hover:bg-slate-50" aria-selected="false">Templates</button>
+  <button data-tab="history" class="tab-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-extrabold tracking-widest uppercase text-slate-600 hover:bg-slate-50" aria-selected="false">History &amp; Stats</button>
+</nav>
+
+<div id="tab-compose" class="tab-pane space-y-6">
+<details class="bg-white border border-slate-200 rounded-2xl overflow-hidden group">
+  <summary class="list-none px-4 md:px-5 py-3 flex items-center gap-2 cursor-pointer select-none bg-slate-50/60">
+    <span class="h-6 w-6 rounded-full bg-slate-900 text-white grid place-items-center text-xs shrink-0">?</span>
+    <span class="text-xs font-extrabold tracking-widest uppercase text-slate-700">How "what's left" is picked</span>
+    <span class="ml-auto text-xs text-slate-400 group-open:rotate-180 transition">⌄</span>
+    <span class="hidden md:inline text-xs text-slate-400 ml-2">Sheet F=Email · G=Status — DELIVERED excluded</span>
+  </summary>
+  <div class="px-4 md:px-5 py-3 border-t border-slate-100">
+    <div class="px-4 md:px-5 py-3">
+    <p class="text-xs leading-relaxed text-slate-600">The tool builds <span class="mono bg-slate-100 border px-1 py-0.5 rounded">Map(lowerEmail &rarr; status)</span> via <span class="mono bg-slate-100 border px-1 py-0.5 rounded">readSheetStatuses()</span>. Append new rows with empty <span class="mono">Status</span> to <span class="mono">Restaurants </span> &mdash; they become sendable on next Refresh.</p>
+    <div class="mt-3 grid md:grid-cols-2 gap-2 text-xs text-slate-600">
+      <div class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">Mailable = valid syntax + not blocked + not suppressed + Status &ne; DELIVERED + not in <span class="mono">email-sent-log.json</span> (unless Resend), deduped by lower email.</div>
+      <div class="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">With <b>Write DELIVERED</b>, each success runs <span class="mono">batchUpdate G[row]=DELIVERED</span> &mdash; Sheet stays the source of truth.</div>
+    </div>
+  </div>
+</div>
+  </div>
+</details>
+<section class="space-y-3">
+  <div class="flex items-end justify-between gap-3">
+    <div>
+      <p class="text-[11px] font-extrabold tracking-widest uppercase text-slate-400">Step 1 &middot; Inventory</p>
+      <h2 class="text-sm font-extrabold tracking-tight">What&rsquo;s left to send</h2>
+      <p class="text-xs text-slate-500">Clean, deduped, sheet-aware. Empty or FAILED stays mailable &mdash; only DELIVERED is removed.</p>
+    </div>
+    <span class="hidden md:inline-flex text-xs text-slate-400">auto-refreshes every 30s</span>
+  </div>
+  <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+    <div class="card bg-white border border-slate-200 rounded-2xl p-4">
+      <div class="flex items-center justify-between"><p class="text-[11px] font-bold tracking-widest uppercase text-slate-500">Mailable</p><span class="h-2 w-2 rounded-full bg-slate-900"></span></div>
+      <p id="count" class="text-3xl font-extrabold tracking-tight mt-2">-</p>
+      <p class="text-xs text-slate-500 mt-1">sendable unique</p>
+      <div class="mt-3 h-1.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-slate-900 w-[70%]"></div></div>
+    </div>
+    <div class="card bg-white border border-slate-200 rounded-2xl p-4">
+      <div class="flex items-center justify-between"><p class="text-[11px] font-bold tracking-widest uppercase text-slate-500">Direct</p><span class="h-2 w-2 rounded-full bg-emerald-500"></span></div>
+      <p id="direct" class="text-3xl font-extrabold tracking-tight mt-2 text-emerald-600">-</p>
+      <p class="text-xs text-slate-500 mt-1">personal inbox</p>
+    </div>
+    <div class="card bg-white border border-slate-200 rounded-2xl p-4">
+      <div class="flex items-center justify-between"><p class="text-[11px] font-bold tracking-widest uppercase text-slate-500">Role</p><span class="h-2 w-2 rounded-full bg-amber-500"></span></div>
+      <p id="role" class="text-3xl font-extrabold tracking-tight mt-2 text-amber-600">-</p>
+      <p class="text-xs text-slate-500 mt-1">info@ kept</p>
+    </div>
+    <div class="card bg-white border border-slate-200 rounded-2xl p-4">
+      <div class="flex items-center justify-between"><p class="text-[11px] font-bold tracking-widest uppercase text-slate-500">Suppressed / sent</p><span class="h-2 w-2 rounded-full bg-rose-500"></span></div>
+      <p id="suppressed" class="text-3xl font-extrabold tracking-tight mt-2 text-rose-600">-</p>
+      <p class="text-xs text-slate-500 mt-1">bounced + unsub + campaign</p>
+    </div>
+    <div class="card bg-white border border-slate-200 rounded-2xl p-4">
+      <div class="flex items-center justify-between"><p class="text-[11px] font-bold tracking-widest uppercase text-slate-500">Already DELIVERED</p><span class="h-2 w-2 rounded-full bg-slate-400"></span></div>
+      <p id="deliveredInSheet" class="text-3xl font-extrabold tracking-tight mt-2 text-slate-700">-</p>
+      <p class="text-xs text-slate-500 mt-1">Sheet Status=delivered</p>
+    </div>
+  </div>
+</section>
+<section class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+  <div class="px-4 md:px-5 py-3 border-b border-slate-100 bg-slate-50/60 flex flex-wrap items-center gap-2">
+    <h3 class="text-xs font-extrabold tracking-widest uppercase text-slate-700">Campaign setup</h3>
+    <span class="text-xs text-slate-400">From, relay and content that will be sent</span>
+    <span class="inline-flex items-center gap-1.5 text-xs ml-auto"><span class="text-slate-400">Campaign:</span><span id="campaignChip" class="mono bg-slate-900 text-white px-2.5 py-1 rounded-full font-bold">-</span></span><span class="inline-flex items-center gap-2 text-xs"><span id="perHour" class="bg-slate-900 text-white px-2.5 py-1 rounded-full font-bold">-/hr</span><span id="perBatch" class="bg-white border border-slate-200 px-2.5 py-1 rounded-full font-medium text-slate-700">-/batch &middot; -s pause</span></span>
+  </div>
+  <div class="p-4 md:p-5 space-y-3">
+    <div class="flex flex-wrap items-center gap-2 text-xs">
+      <span class="font-semibold text-slate-700">From:</span><span id="fromLabel" class="mono bg-slate-100 border border-slate-200 px-2 py-1 rounded-full">-</span>
+      <span class="text-slate-300">&middot;</span><span id="relayLabel" class="mono text-slate-600">-</span>
+      <span class="ml-auto text-slate-500">Sheet: <span id="sheetHealth" class="mono">-</span></span>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <div class="bg-slate-50 border border-slate-200 rounded-xl p-3"><p class="text-[11px] font-bold tracking-widest uppercase text-slate-500">Subject (per-category)</p><p id="subjectLabel" class="text-sm mt-1 text-slate-800">-</p><p class="hint mt-1">Tokens: category, area, sender_name</p></div>
+      <div class="bg-slate-50 border border-slate-200 rounded-xl p-3"><p class="text-[11px] font-bold tracking-widest uppercase text-slate-500">Unsubscribe base</p><p id="unsubBase" class="mono text-xs break-all mt-1">-</p><p class="hint mt-1">Set a public URL before bulk &mdash; localhost breaks for recipients.</p></div>
+      <div class="bg-slate-50 border border-slate-200 rounded-xl p-3"><p class="text-[11px] font-bold tracking-widest uppercase text-slate-500">Postal address</p><p id="addrDetail" class="text-xs text-slate-600 mt-1">-</p></div>
+    </div>
+    <p id="localWarn" class="hidden text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">Warning: Unsubscribe base is still localhost &mdash; external recipients will not reach the page. Set <span class="mono">unsubscribe_base_url</span> to a public URL before bulk sends.</p>
+  </div>
+</section>
+<section class="space-y-3">
+  <div>
+    <p class="text-[11px] font-extrabold tracking-widest uppercase text-slate-400">Step 2 &middot; Send</p>
+    <h2 class="text-sm font-extrabold tracking-tight">Run a batch</h2>
+    <p class="text-xs text-slate-500">Preview first, then send. Dry run never writes the Sheet.</p>
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+    <div class="lg:col-span-2 bg-white border border-slate-200 rounded-2xl shadow-sm p-4 md:p-5 space-y-4">
+      <h3 class="text-xs font-extrabold tracking-widest uppercase text-slate-700 border-b border-slate-100 pb-2">Send controls</h3>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="block text-xs font-semibold text-slate-600 mb-1">Limit</label><input id="limit" type="number" min="1" max="10000" value="5" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl mono text-sm focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none"></div>
+        <div><label class="block text-xs font-semibold text-slate-600 mb-1">Mode</label><select id="mode" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-slate-900 outline-none"><option value="dry">Dry run</option><option value="send">Send for real</option></select></div>
+      </div>
+      <div class="bg-slate-900 text-white rounded-2xl p-4 space-y-3 border border-slate-800">
+        <div class="flex items-center gap-2">
+          <span class="h-7 w-7 rounded-full bg-white text-slate-900 grid place-items-center text-xs font-extrabold shrink-0">1</span>
+          <label for="campaignNameInput" class="text-sm font-extrabold tracking-tight">Name your campaign</label>
+          <span class="ml-auto text-[11px] bg-white/15 border border-white/20 px-2 py-1 rounded-full font-semibold tracking-widest uppercase">History groups by this</span>
+        </div>
+        <div class="flex gap-2">
+          <input id="campaignNameInput" type="text" maxlength="60" placeholder="e.g. Restaurants Oct 2  or  Delhi Plumbers" class="flex-1 px-3.5 py-3 bg-white text-slate-900 border-0 rounded-xl text-sm font-medium placeholder:text-slate-400 focus:ring-2 focus:ring-white/60 outline-none" autocomplete="off">
+          <button id="campaignSaveBtn" type="button" class="shrink-0 bg-white text-slate-900 font-extrabold px-4 py-3 rounded-xl hover:bg-slate-100 text-xs whitespace-nowrap">Save</button>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" data-campaign-preset="Restaurants Oct 3" class="campaign-preset text-xs bg-white/10 hover:bg-white/15 border border-white/20 px-3 py-1.5 rounded-full font-semibold">Restaurants Oct 3</button>
+          <button type="button" data-campaign-preset="Follow-up Oct 3" class="campaign-preset text-xs bg-white/10 hover:bg-white/15 border border-white/20 px-3 py-1.5 rounded-full font-semibold">Follow-up Oct 3</button>
+          <button type="button" id="campaignClearBtn" class="text-xs bg-white/10 hover:bg-white/15 border border-white/20 px-3 py-1.5 rounded-full font-semibold">Use today</button>
+          <span id="campaignHint" class="text-xs text-white/70 self-center hidden"></span>
+        </div>
+        <p class="text-[11px] leading-relaxed text-white/60"><b class="text-white">How it works:</b> type a name → <b class="text-white">Save</b> (or just press Enter) → pick Limit/Mode → <b class="text-white">Run</b>. Blank = today (<span id="campaignTodayHint" class="mono bg-white/15 px-1.5 py-0.5 rounded text-white">2026-10-03</span>). You can change the name right before Run without saving — Run uses what’s in the box.</p>
+      </div>
+      <div class="space-y-2">
+        <label class="flex items-center gap-2.5 text-sm select-none bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5"><input id="resend" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-slate-900"> Resend already-sent (same campaign day)</label>
+        <label class="flex items-center gap-2.5 text-sm select-none bg-sky-50 border border-sky-200 rounded-xl px-3 py-2.5"><input id="useSheet" type="checkbox" class="h-4 w-4 rounded border-sky-300 text-sky-600" checked> Use Google Sheet Status (exclude DELIVERED)</label>
+        <label class="flex items-center gap-2.5 text-sm select-none bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5"><input id="writeSheet" type="checkbox" class="h-4 w-4 rounded border-emerald-300 text-emerald-600"> Write DELIVERED to Sheet after each success</label>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <button id="refreshBtn" class="bg-white border border-slate-200 font-semibold py-2.5 rounded-xl hover:bg-slate-50 text-sm">Refresh</button>
+        <button id="previewBtn" class="bg-slate-900 text-white font-bold py-2.5 rounded-xl hover:bg-black text-sm">Preview</button>
+      </div>
+      <button id="runBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-sm">Run</button>
+      <div id="progress" class="hidden"><div class="h-2 bg-slate-100 rounded-full border border-slate-200 overflow-hidden"><div id="progressBar" class="h-full bg-emerald-600 transition-all" style="width:0%"></div></div><p id="progressText" class="text-xs mono text-slate-600 mt-2">-</p></div>
+      <p id="status" class="text-xs text-slate-500 min-h-[1.2em]"></p>
+      
+    </div>
+    <div class="lg:col-span-3 bg-white border border-slate-200 rounded-2xl shadow-sm p-4 md:p-5">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-2 mb-3">
+        <h3 class="text-xs font-extrabold tracking-widest uppercase text-slate-700">Preview</h3>
+        <span id="previewMeta" class="text-xs mono text-slate-400">-</span>
+      </div>
+      <div id="previewEmpty" class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-400">Hit <b class="text-slate-600">Preview</b> or <b class="text-slate-600">Run (dry)</b> to render the first email.</div>
+      <div id="previewCard" class="hidden border border-slate-200 rounded-2xl overflow-hidden">
+        <div class="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between"><span class="text-[11px] font-bold tracking-widest uppercase text-slate-500">Subject</span><span id="previewCount" class="text-xs mono text-slate-500"></span></div>
+        <div id="previewSubject" class="px-4 py-3 text-sm font-semibold bg-white border-b border-slate-100"></div>
+        <div class="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2 text-xs"><span class="text-slate-500">To</span><span id="previewTo" class="mono font-medium"></span><span id="previewName" class="ml-auto text-slate-400"></span></div>
+        <pre id="previewBody" class="p-4 text-sm whitespace-pre-wrap leading-relaxed bg-white max-h-[22rem] overflow-auto"></pre>
+        <div class="px-4 py-3 bg-slate-50 border-t border-slate-200"><p class="text-[11px] font-bold tracking-widest uppercase text-slate-500 mb-1">HTML</p><div id="previewHtml" class="bg-white border border-slate-200 rounded-xl p-3 max-h-64 overflow-auto text-sm"></div></div>
+      </div>
+      <div class="mt-4">
+        <div class="flex items-center justify-between"><p class="text-[11px] font-bold tracking-widest uppercase text-slate-500">Live log</p><button id="logClear" class="text-xs text-slate-400 hover:text-slate-600">Clear</button></div>
+        <div id="log" class="mt-2 h-56 overflow-auto bg-slate-950 text-slate-100 rounded-2xl p-3 mono text-xs leading-relaxed border border-slate-800"></div>
+      </div>
+    </div>
+  </div>
+</section>
+</div>
+<div id="tab-templates" class="tab-pane hidden space-y-6">
+<div class="space-y-4">
+  <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+    <div class="px-4 md:px-5 py-4 border-b border-slate-100 bg-slate-50/60">
+      <h2 class="text-sm font-extrabold tracking-tight">Templates — per category</h2>
+      <p class="text-xs text-slate-500 mt-1">One template per lead category (Restaurants, Plumber, etc.). No exact match → case-insensitive match → <span class="mono bg-white border px-1.5 py-0.5 rounded text-[11px]">Restaurants</span>. Saved to <span class="mono bg-white border px-1.5 py-0.5 rounded">email-templates.json</span>.</p>
+    </div>
+    <div class="p-4 md:p-5 space-y-4">
+      <div class="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 flex gap-2 items-start text-xs text-amber-900">
+        <span class="shrink-0 mt-0.5">TIP</span>
+        <span><b>How to create:</b> 1) Pick a category — or type a new name on the right → 2) Fill <b>Subject</b> + <b>Body</b> (HTML optional) → 3) <b>Save template</b>. Click a token chip to insert at cursor. Preview updates live on the right.</span>
+      </div>
+      <div class="flex flex-wrap gap-1.5 text-xs">
+        <span class="mono bg-slate-900 text-white px-2 py-1 rounded-full font-bold">Tokens — click to insert</span>
+        <button type="button" data-ins="sender_name" class="tok-chip mono bg-white border border-slate-200 px-2 py-1 rounded-full hover:bg-slate-50">sender_name <span class="text-slate-400">→ {{sender_name}}</span></button>
+        <button type="button" data-ins="greeting" class="tok-chip mono bg-white border border-slate-200 px-2 py-1 rounded-full hover:bg-slate-50">greeting → {{greeting}}</button>
+        <button type="button" data-ins="name" class="tok-chip mono bg-white border border-slate-200 px-2 py-1 rounded-full hover:bg-slate-50">name → {{name}}</button>
+        <button type="button" data-ins="first_name" class="tok-chip mono bg-white border border-slate-200 px-2 py-1 rounded-full hover:bg-slate-50">first_name</button>
+        <button type="button" data-ins="category" class="tok-chip mono bg-white border border-slate-200 px-2 py-1 rounded-full hover:bg-slate-50">category</button>
+        <button type="button" data-ins="area" class="tok-chip mono bg-white border border-slate-200 px-2 py-1 rounded-full hover:bg-slate-50">area</button>
+        <button type="button" data-ins="website" class="tok-chip mono bg-white border border-slate-200 px-2 py-1 rounded-full hover:bg-slate-50">website</button>
+        <button type="button" data-ins="unsubscribe_url" class="tok-chip mono bg-white border border-slate-200 px-2 py-1 rounded-full hover:bg-slate-50">unsubscribe_url</button>
+        <button type="button" data-ins="business_address" class="tok-chip mono bg-white border border-slate-200 px-2 py-1 rounded-full hover:bg-slate-50">business_address</button>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="space-y-3">
+          <label class="block text-xs font-semibold text-slate-600">Category <span class="font-normal text-slate-400">— pick existing or type a new one</span></label>
+          <div class="flex gap-2">
+            <select id="tplCategory" class="flex-1 min-w-0 px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white"></select>
+            <input id="tplCategoryNew" placeholder="New category..." class="flex-1 min-w-0 px-3 py-2.5 border border-slate-300 rounded-xl text-sm" />
+          </div>
+          <p class="hint">Typing a new name and hitting <b>Save template</b> creates that template. Leave blank to edit the dropdown value.</p>
+          <label class="block text-xs font-semibold text-slate-600">Subject</label>
+          <input id="tplSubject" placeholder="Quick question about {{category}} work in {{area}}" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm" />
+          <label class="block text-xs font-semibold text-slate-600">Body (plain text)</label>
+          <textarea id="tplBody" rows="9" placeholder="{{greeting}},&#10;&#10;I came across {{name}}..." class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm mono"></textarea>
+          <label class="block text-xs font-semibold text-slate-600">Body HTML <span class="font-normal text-slate-400">(optional — if empty, plain body is used)</span></label>
+          <textarea id="tplHtml" rows="6" placeholder="&lt;div&gt;{{greeting}}, ...&lt;/div&gt;" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm mono"></textarea>
+          <div class="flex gap-2">
+            <button id="tplSave" class="flex-1 bg-slate-900 text-white font-bold py-2.5 rounded-xl text-sm hover:bg-black">Save template</button>
+            <button id="tplDelete" class="px-5 bg-white border border-slate-200 font-semibold py-2.5 rounded-xl text-sm hover:bg-slate-50">Delete</button>
+            <button id="tplDuplicate" class="px-5 bg-white border border-slate-200 font-semibold py-2.5 rounded-xl text-sm hover:bg-slate-50">Duplicate</button>
+          </div>
+          <p id="tplStatus" class="text-xs text-slate-500 min-h-[1.2em]"></p>
+        </div>
+        <div class="space-y-3">
+          <p class="text-xs font-extrabold tracking-widest uppercase text-slate-500">Template preview (live)</p>
+          <div id="tplPreviewCard" class="border border-slate-200 rounded-2xl overflow-hidden bg-white">
+            <div class="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between"><span class="text-[11px] font-bold tracking-widest uppercase text-slate-500">Subject</span><span id="tplPreviewCat" class="text-xs mono text-slate-400"></span></div>
+            <div id="tplPreviewSubject" class="px-4 py-3 text-sm font-semibold border-b border-slate-100 min-h-[2.5rem]"></div>
+            <div class="px-4 py-2 bg-slate-50 border-b border-slate-100 text-xs text-slate-500">Plain body</div>
+            <pre id="tplPreviewBody" class="p-4 text-sm whitespace-pre-wrap leading-relaxed max-h-64 overflow-auto"></pre>
+            <div class="px-4 py-2 bg-slate-50 border-y border-slate-200 text-xs text-slate-500">HTML</div>
+            <div id="tplPreviewHtml" class="p-3 max-h-64 overflow-auto text-sm bg-white"></div>
+          </div>
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600">
+            <p class="font-semibold">Fallback rule</p><p class="mt-1">No exact category → case-insensitive match → <span class="mono">Restaurants</span>. So every new scrape category already has a working email.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+<div id="tab-history" class="tab-pane hidden space-y-6">
+<section class="space-y-3">
+  <div class="flex items-end justify-between gap-3">
+    <div>
+      <p class="text-[11px] font-extrabold tracking-widest uppercase text-slate-400">Performance</p>
+      <h2 class="text-sm font-extrabold tracking-tight">Delivery &amp; engagement</h2>
+      <p class="text-xs text-slate-500">From <span class="mono">email-events.json</span> &mdash; shared with <span class="mono">:3000</span>. Copy that file when you hand off.</p>
+    </div>
+    <div class="hidden md:flex items-center gap-2 text-xs text-slate-500"><a href="/api/export/csv" class="underline underline-offset-4 hover:text-slate-700">Export CSV</a><span class="text-slate-300">&middot;</span><a href="/api/events?limit=100" target="_blank" class="underline underline-offset-4 hover:text-slate-700">Events JSON</a></div>
+  </div>
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div class="card bg-white border border-slate-200 rounded-2xl p-4"><p class="text-[11px] font-bold tracking-widest uppercase text-slate-500">Delivered</p><p id="statsDelivered" class="text-3xl font-extrabold tracking-tight mt-1 text-sky-600">-</p><p class="text-xs text-slate-500">SMTP accepted</p></div>
+    <div class="card bg-white border border-slate-200 rounded-2xl p-4"><p class="text-[11px] font-bold tracking-widest uppercase text-slate-500">Bounced</p><p id="statsBounced" class="text-3xl font-extrabold tracking-tight mt-1 text-rose-600">-</p><p class="text-xs text-slate-500">SMTP failed / bounced</p></div>
+    <div class="card bg-white border border-slate-200 rounded-2xl p-4"><p class="text-[11px] font-bold tracking-widest uppercase text-slate-500">Opened</p><p id="statsOpened" class="text-3xl font-extrabold tracking-tight mt-1 text-amber-600">-</p><p id="statsOpenedRate" class="text-xs text-slate-500 mt-1">-% open rate</p></div>
+    <div class="card bg-white border border-slate-200 rounded-2xl p-4"><p class="text-[11px] font-bold tracking-widest uppercase text-slate-500">Replied</p><p id="statsReplied" class="text-3xl font-extrabold tracking-tight mt-1 text-violet-600">-</p><p id="statsRepliedRate" class="text-xs text-slate-500 mt-1">-% reply rate</p></div>
+  </div>
+  <p id="statsMeta" class="text-xs text-center text-slate-400"></p>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+    <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between"><h3 class="text-xs font-extrabold tracking-widest uppercase text-slate-700">Recent opens</h3><span class="text-[11px] text-slate-400">last 20 &middot; image must load</span></div>
+      <div class="overflow-auto max-h-72"><table class="w-full text-left text-xs"><thead class="bg-slate-50 text-slate-500 uppercase font-semibold sticky top-0"><tr><th class="px-3 py-2">Email</th><th class="px-3 py-2">Opens</th><th class="px-3 py-2">Last open</th></tr></thead><tbody id="recentOpensBody" class="divide-y divide-slate-100"><tr><td colspan="3" class="px-3 py-6 text-center text-slate-400 italic">No opens yet.</td></tr></tbody></table></div>
+    </div>
+    <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between"><h3 class="text-xs font-extrabold tracking-widest uppercase text-slate-700">Recent replies</h3><div class="flex items-center gap-2"><button id="pollRepliesBtn" class="text-xs bg-sky-600 text-white px-3 py-1.5 rounded-full font-semibold hover:bg-sky-700">Poll replies</button><span class="text-[11px] text-slate-400">IMAP: <span id="imapHealth" class="mono">-</span></span></div></div>
+      <div class="overflow-auto max-h-72"><table class="w-full text-left text-xs"><thead class="bg-slate-50 text-slate-500 uppercase font-semibold sticky top-0"><tr><th class="px-3 py-2">From</th><th class="px-3 py-2">Subject</th><th class="px-3 py-2">When</th></tr></thead><tbody id="recentRepliesBody" class="divide-y divide-slate-100"><tr><td colspan="3" class="px-3 py-6 text-center text-slate-400 italic">No replies yet.</td></tr></tbody></table></div>
+    </div>
+  </div>
+</section>
+<section class="space-y-3">
+  <div>
+    <p class="text-[11px] font-extrabold tracking-widest uppercase text-slate-400">Step 3 &middot; History</p>
+    <h2 class="text-sm font-extrabold tracking-tight">Campaigns</h2>
+    <p class="text-xs text-slate-500">Grouped from <span class="mono">email-events.json</span> &mdash; click a campaign to see its emails.</p>
+  </div>
+  <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+    <div class="px-4 py-3 border-b border-slate-100 bg-slate-50/60 flex items-center gap-2 flex-wrap">
+      <h3 class="text-xs font-extrabold tracking-widest uppercase text-slate-700">All campaigns</h3>
+      <span class="text-xs text-slate-400 hidden md:inline">history &middot; click to open</span>
+      <button id="campaignRefreshBtn" class="ml-auto text-xs bg-white border border-slate-200 px-3 py-1.5 rounded-full font-semibold hover:bg-slate-50">Refresh</button>
+    </div>
+    <div id="campaignsList" class="divide-y divide-slate-100"><p class="text-sm text-slate-400 italic px-4 py-6">No campaigns yet.</p></div>
+  </div>
+  <div id="campaignDetail" class="hidden bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+    <div class="px-4 py-3 border-b border-slate-100 bg-slate-50/60 flex items-center gap-2 flex-wrap"><button id="backToCampaigns" class="text-xs bg-white border border-slate-200 px-3 py-1.5 rounded-full font-semibold hover:bg-slate-50">&larr; All campaigns</button><h3 id="campaignTitle" class="text-sm font-bold text-slate-800">Campaign</h3><span id="campaignMeta" class="text-xs text-slate-400"></span></div>
+    <div class="px-4 py-3 border-b border-slate-100 bg-white flex gap-2 flex-wrap items-center"><input id="emailSearch" type="text" placeholder="Search email / name / category..." class="flex-1 min-w-[180px] px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-slate-900 outline-none"><select id="statusFilter" class="px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white"><option value="">All statuses</option><option value="delivered">Delivered</option><option value="bounced">Bounced</option><option value="opened">Opened</option><option value="unopened">Not opened</option><option value="replied">Replied</option></select><span id="emailCountLabel" class="text-xs text-slate-400 ml-auto"></span></div>
+    <div class="overflow-auto max-h-[420px]"><table class="w-full text-left text-xs"><thead class="bg-slate-50 text-slate-500 uppercase font-semibold sticky top-0"><tr><th class="px-3 py-2.5">Email</th><th class="px-3 py-2.5">Name</th><th class="px-3 py-2.5">Category</th><th class="px-3 py-2.5">Status</th><th class="px-3 py-2.5">Sent</th><th class="px-3 py-2.5"></th></tr></thead><tbody id="emailsBody" class="divide-y divide-slate-100"><tr><td colspan="6" class="px-3 py-6 text-center text-slate-400 italic">Select a campaign above.</td></tr></tbody></table></div>
+    <div class="px-4 py-2.5 border-t border-slate-100 bg-slate-50/60 flex items-center gap-2 text-xs"><button id="emailsPrev" class="px-3 py-1.5 bg-white border border-slate-200 rounded-full font-semibold disabled:opacity-40">Prev</button><button id="emailsNext" class="px-3 py-1.5 bg-white border border-slate-200 rounded-full font-semibold disabled:opacity-40">Next</button><span id="emailsPage" class="text-slate-400"></span></div>
+  </div>
+</section>
+</div>
+<footer class="text-xs text-slate-400 text-center border-t border-slate-200 pt-4">Hand-off: run <span class="mono bg-white border border-slate-200 px-1.5 py-0.5 rounded">node email-campaign-tool/server.js</span> &middot; needs <span class="mono bg-white border px-1.5 py-0.5 rounded">output/*.xlsx</span> + <span class="mono bg-white border px-1.5 py-0.5 rounded">email-config.json</span> + <span class="mono bg-white border px-1.5 py-0.5 rounded">email-suppression.json</span> + <span class="mono bg-white border px-1.5 py-0.5 rounded">email-templates.json</span>. Env: <span class="mono bg-white border px-1.5 py-0.5 rounded">EMAIL_TOOL_PORT=3001</span>, <span class="mono bg-white border px-1.5 py-0.5 rounded">GSHEET_*</span>.</footer>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const els={count:$('count'),direct:$('direct'),role:$('role'),suppressed:$('suppressed'),deliveredInSheet:$('deliveredInSheet'),fromLabel:$('fromLabel'),relayLabel:$('relayLabel'),perHour:$('perHour'),perBatch:$('perBatch'),subjectLabel:$('subjectLabel'),unsubBase:$('unsubBase'),addrDetail:$('addrDetail'),sheetHealth:$('sheetHealth'),healthDot:$('healthDot'),localWarn:$('localWarn'),limit:$('limit'),mode:$('mode'),resend:$('resend'),useSheet:$('useSheet'),writeSheet:$('writeSheet'),refreshBtn:$('refreshBtn'),previewBtn:$('previewBtn'),runBtn:$('runBtn'),progress:$('progress'),progressBar:$('progressBar'),progressText:$('progressText'),status:$('status'),previewEmpty:$('previewEmpty'),previewCard:$('previewCard'),previewMeta:$('previewMeta'),previewCount:$('previewCount'),previewSubject:$('previewSubject'),previewTo:$('previewTo'),previewName:$('previewName'),previewBody:$('previewBody'),previewHtml:$('previewHtml'),log:$('log'),logClear:$('logClear'),tplCategory:$('tplCategory'),tplSubject:$('tplSubject'),tplBody:$('tplBody'),tplHtml:$('tplHtml'),tplSave:$('tplSave'),tplDelete:$('tplDelete'),tplStatus:$('tplStatus'),campaignNameInput:$('campaignNameInput'),campaignSaveBtn:$('campaignSaveBtn'),campaignClearBtn:$('campaignClearBtn'),campaignChip:$('campaignChip'),campaignHint:$('campaignHint'),campaignTodayHint:$('campaignTodayHint'),
+statsDelivered:$('statsDelivered'),statsBounced:$('statsBounced'),statsOpened:$('statsOpened'),statsOpenedRate:$('statsOpenedRate'),statsReplied:$('statsReplied'),statsRepliedRate:$('statsRepliedRate'),recentOpensBody:$('recentOpensBody'),recentRepliesBody:$('recentRepliesBody'),pollRepliesBtn:$('pollRepliesBtn'),imapHealth:$('imapHealth'),statsMeta:$('statsMeta')};
+let overviewCache=null;
+function logLine(t,cls){const d=document.createElement('div');d.textContent=t;if(cls)d.className=cls;els.log.appendChild(d);els.log.scrollTop=els.log.scrollHeight;}
+if(els.logClear) els.logClear.onclick=()=>els.log.innerHTML='';
+function renderPreview(p,total){if(!p) return; if(els.previewEmpty) els.previewEmpty.classList.add('hidden'); if(els.previewCard) els.previewCard.classList.remove('hidden'); if(els.previewSubject) els.previewSubject.textContent=p.subject||''; if(els.previewTo) els.previewTo.textContent=p.to||''; if(els.previewName) els.previewName.textContent=p.name?'('+p.name+')':''; if(els.previewBody) els.previewBody.textContent=p.text||''; if(els.previewHtml) els.previewHtml.innerHTML=p.html||''; if(els.previewCount) els.previewCount.textContent=total?('1 / '+total):''; if(els.previewMeta) els.previewMeta.textContent=p.area?(p.category+' - '+p.area):'';}
+function renderStats(s){
+  if(!s) return;
+  if(els.statsDelivered) els.statsDelivered.textContent=String(s.delivered??'-');
+  if(els.statsBounced) els.statsBounced.textContent=String(s.bounced??'-');
+  if(els.statsOpened) els.statsOpened.textContent=String(s.opened??'-');
+  if(els.statsOpenedRate) els.statsOpenedRate.textContent=(s.openRate!=null? s.openRate+'% open rate':'-% open rate')+(s.delivered? ' \u00b7 '+s.opened+'/'+s.delivered:'');
+  if(els.statsReplied) els.statsReplied.textContent=String(s.replied??'-');
+  if(els.statsRepliedRate) els.statsRepliedRate.textContent=(s.replyRate!=null? s.replyRate+'% reply rate':'-% reply rate')+(s.delivered? ' \u00b7 '+s.replied+'/'+s.delivered:'');
+  if(els.statsMeta) els.statsMeta.textContent='total '+(s.total??0)+' \u00b7 delivered '+(s.delivered??0)+' \u00b7 bounced '+(s.bounced??0)+' \u00b7 opened '+(s.opened??0)+' \u00b7 replied '+(s.replied??0);
+  const ro=s.recentOpens||[]; if(els.recentOpensBody) els.recentOpensBody.innerHTML=ro.length? ro.map(r=>'<tr class="hover:bg-slate-50"><td class="px-3 py-2 truncate max-w-[16rem]" title="'+(r.email||'')+'">'+(r.email||'-')+'<span class="text-slate-400"> '+(r.name||'')+'</span></td><td class="px-3 py-2 text-center">'+(r.openCount??1)+'</td><td class="px-3 py-2 text-slate-500 whitespace-nowrap">'+(r.lastOpenAt? new Date(r.lastOpenAt).toLocaleString():'-')+'</td></tr>').join('') : '<tr><td colspan="3" class="px-3 py-6 text-center text-slate-400 italic">No opens yet \u2014 pixel needs image load.</td></tr>';
+  const rr=s.recentReplies||[]; if(els.recentRepliesBody) els.recentRepliesBody.innerHTML=rr.length? rr.map(r=>'<tr class="hover:bg-slate-50"><td class="px-3 py-2 truncate max-w-[12rem]" title="'+(r.replyFrom||r.email||'')+'">'+(r.replyFrom||r.email||'-')+'</td><td class="px-3 py-2 truncate max-w-[16rem]" title="'+(r.replySubject||'')+'">'+(r.replySubject||'-')+'</td><td class="px-3 py-2 text-slate-500 whitespace-nowrap">'+(r.repliedAt? new Date(r.repliedAt).toLocaleString():'-')+'</td></tr>').join('') : '<tr><td colspan="3" class="px-3 py-6 text-center text-slate-400 italic">No replies yet.</td></tr>';
+  if(els.imapHealth) els.imapHealth.textContent=s.imap ? ((s.imap.lastPollAt? new Date(s.imap.lastPollAt).toLocaleString():'never')+(s.imap.lastError? ' \u00b7 '+String(s.imap.lastError).slice(0,60):'')+' \u00b7 checked '+(s.imap.checked??0)+' matched '+(s.imap.matched??0)) : 'no state yet';
+}
+async function pollReplies(){
+  if(!els.pollRepliesBtn) return;
+  els.pollRepliesBtn.disabled=true; const t=els.pollRepliesBtn.textContent; els.pollRepliesBtn.textContent='Polling...';
+  try{ const r=await fetch('/api/imap/poll',{method:'POST'}); const j=await r.json(); logLine('[imap poll] checked='+(j.checked??0)+' matched='+(j.matched??0)+(j.error?' error='+j.error:''), j.error?'text-rose-400':'text-sky-300'); await loadOverview(); }catch(e){ logLine('[imap poll error] '+e.message,'text-rose-400'); } finally{ els.pollRepliesBtn.disabled=false; els.pollRepliesBtn.textContent=t; }
+}
+if(els.pollRepliesBtn) els.pollRepliesBtn.onclick=pollReplies;
+async function loadOverview(){try{if(els.status) els.status.textContent='Loading...';const qs=new URLSearchParams();if(els.resend && els.resend.checked)qs.set('resend','1');if(els.useSheet && !els.useSheet.checked)qs.set('sheet','0');const r=await fetch('/api/overview?'+qs.toString());if(!r.ok)throw new Error(await r.text());const o=await r.json();overviewCache=o;const n=x=>x==null?'-':String(x);if(els.count) els.count.textContent=n(o.sendable);if(els.direct) els.direct.textContent=n(o.direct);if(els.role) els.role.textContent=n(o.role);if(els.suppressed) els.suppressed.textContent=n(o.suppressed);if(els.deliveredInSheet) els.deliveredInSheet.textContent=n(o.deliveredInSheet);if(els.fromLabel) els.fromLabel.textContent=(o.from?.name||'')+' <'+(o.from?.address||'')+'>';if(els.relayLabel) els.relayLabel.textContent=(o.smtp?.host||'-')+':'+(o.smtp?.port||'-');if(els.subjectLabel) els.subjectLabel.textContent=o.subject||'-';if(els.unsubBase) els.unsubBase.textContent=o.unsubscribe_base_url||'-';if(els.addrDetail) els.addrDetail.textContent=o.business_address||'-';if(els.perHour) els.perHour.textContent=(o.per_hour??'-')+'/hr';if(els.perBatch) els.perBatch.textContent=(o.per_batch??'-')+'/batch \u00b7 '+(o.batch_pause_seconds??'-')+'s pause';const sheet=o.sheet;if(els.sheetHealth) els.sheetHealth.textContent=sheet?.ok===true?('OK \u2014 '+sheet.statuses+' emails mapped in Sheet'):sheet?.ok===false?('error: '+(sheet?.error||'unknown')):'off (sheet=0)';const isLocal=String(o.unsubscribe_base_url||'').includes('localhost');if(els.localWarn) els.localWarn.classList.toggle('hidden',!isLocal);if(o.smtp_ok===true){els.healthDot.textContent='Relay OK \u00b7 '+((o.smtp&&o.smtp.host)||'');els.healthDot.className='ml-auto inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200';els.healthDot.title=o.smtp_error||''; if(window.__lastRelayOk!==true) logLine('[relay] Relay OK','text-emerald-300'); window.__lastRelayOk=true;}else if(o.smtp_ok===false){var _err=(o.smtp_error||'').slice(0,120);els.healthDot.textContent='Relay check failed'+(_err?' \u00b7 '+_err:'')+' · retrying';els.healthDot.className='ml-auto inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border bg-rose-50 text-rose-700 border-rose-200';els.healthDot.title=o.smtp_error||'';if(window.__lastRelayOk!==false) logLine('[relay] verify failed: '+o.smtp_error+' — will retry in background','text-rose-400'); window.__lastRelayOk=false;}else{els.healthDot.textContent='Relay checking\u2026';els.healthDot.className='ml-auto inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border bg-slate-50 text-slate-600 border-slate-200';}if(els.campaignChip) els.campaignChip.textContent=o.campaign||'-';
+if(els.campaignNameInput && document.activeElement!==els.campaignNameInput) els.campaignNameInput.value=o.campaign||'';
+if(els.campaignNameInput) els.campaignNameInput.placeholder='e.g. Restaurants Oct 2 — blank = '+(o.campaign||'today');
+if(els.campaignTodayHint) els.campaignTodayHint.textContent=o.campaign||new Date().toISOString().slice(0,10);
+if(els.campaignHint){ const isDate=/^\d{4}-\d{2}-\d{2}$/.test(String(o.campaign||'')); els.campaignHint.textContent=isDate?'Using today as campaign name — type a name and Save to group this batch.':'Active campaign: '+(o.campaign||'-'); els.campaignHint.classList.remove('hidden'); }
+if(els.status) els.status.textContent='Ready \u2014 '+n(o.sendable)+' mailable for '+(o.campaign||'today')+'. '+(o.sheet?.ok===true?((o.sheet.delivered??o.deliveredInSheet)+' already DELIVERED in Sheet (excluded).'):'');if(o.preview)renderPreview(o.preview,o.sendable); if(o.stats) renderStats(o.stats);const cats=o.templates||[];if(cats.length){const cur=els.tplCategory.value;els.tplCategory.innerHTML=cats.map(c=>'<option value="'+c+'">'+c+'</option>').join('');if(cur&&cats.includes(cur))els.tplCategory.value=cur;if(!cur)loadTemplate(els.tplCategory.value);}logLine('[overview] sendable='+n(o.sendable)+' direct='+n(o.direct)+' role='+n(o.role)+' suppressed='+n(o.suppressed)+' deliveredInSheet='+n(o.deliveredInSheet)+' (empty/FAILED still mailable, only DELIVERED excluded)','text-slate-400');}catch(e){if(els.status) els.status.textContent='Overview failed: '+e.message;logLine('[overview error] '+e.message,'text-rose-400');}}
+async function doPreview(){const limit=parseInt(els.limit.value,10)||5;const resend=els.resend.checked;try{els.previewBtn.disabled=true;els.previewBtn.textContent='Loading...';const qs=new URLSearchParams({limit:String(limit)});if(resend)qs.set('resend','1');if(!els.useSheet.checked)qs.set('sheet','0');const r=await fetch('/api/preview?'+qs.toString());if(!r.ok)throw new Error(await r.text());const data=await r.json();if(data.leads&&data.leads.length){renderPreview(data.leads[0],data.sendable);logLine('[preview] '+data.leads.length+' sample(s)','text-sky-300');els.status.textContent='Preview: '+data.sendable+' mailable; showing '+data.leads.length+'.';}else{els.previewEmpty.textContent='No mailable leads.';els.previewEmpty.classList.remove('hidden');els.previewCard.classList.add('hidden');}}catch(e){els.status.textContent='Preview failed: '+e.message;logLine('[preview error] '+e.message,'text-rose-400');}finally{els.previewBtn.disabled=false;els.previewBtn.textContent='Preview';}}
+function setSending(sending){els.runBtn.disabled=sending;els.previewBtn.disabled=sending;els.refreshBtn.disabled=sending;els.mode.disabled=sending;els.limit.disabled=sending;els.resend.disabled=sending;els.useSheet.disabled=sending;els.writeSheet.disabled=sending;if(els.campaignNameInput) els.campaignNameInput.disabled=sending; if(els.campaignSaveBtn) els.campaignSaveBtn.disabled=sending;if(els.progress) els.progress.classList.toggle('hidden',!sending);if(sending){els.progressBar.style.width='0%';els.progressText.textContent='Starting...';}}
+async function saveCampaignName(){
+  const raw=(els.campaignNameInput?els.campaignNameInput.value.trim():'');
+  if(els.campaignSaveBtn){ els.campaignSaveBtn.disabled=true; els.campaignSaveBtn.textContent='Saving…'; }
+  try{
+    const r=await fetch('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({campaign_name: raw})});
+    const j=await r.json();
+    if(els.campaignChip) els.campaignChip.textContent=j.campaign||raw||'-';
+    if(els.campaignNameInput && j.campaign) els.campaignNameInput.value=j.campaign;
+    if(els.campaignHint){ els.campaignHint.textContent=j.campaign?('Saved — next Run groups under “'+j.campaign+'”.'): 'Cleared — next Run uses today.'; els.campaignHint.classList.remove('hidden'); }
+    logLine('[campaign] saved '+(j.campaign||'(cleared)'), 'text-emerald-300');
+    await loadOverview();
+  }catch(e){ logLine('[campaign save error] '+e.message,'text-rose-400'); }
+  finally{ if(els.campaignSaveBtn){ els.campaignSaveBtn.disabled=false; els.campaignSaveBtn.textContent='Save'; } }
+}
+if(els.campaignSaveBtn) els.campaignSaveBtn.onclick=saveCampaignName;
+if(els.campaignClearBtn) els.campaignClearBtn.onclick=async()=>{ if(els.campaignNameInput) els.campaignNameInput.value=''; await saveCampaignName(); };
+document.querySelectorAll('[data-campaign-preset]').forEach(function(btn){
+  btn.addEventListener('click', function(){ if(els.campaignNameInput) els.campaignNameInput.value=btn.getAttribute('data-campaign-preset')||''; els.campaignNameInput && els.campaignNameInput.focus(); });
+});
+if(els.campaignNameInput) els.campaignNameInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); saveCampaignName(); }});
+if(els.refreshBtn) els.refreshBtn.onclick=loadOverview;
+if(els.healthDot) els.healthDot.onclick=async()=>{ els.healthDot.textContent='Relay checking…'; try{ const r=await fetch('/api/health/smtp'); const j=await r.json(); els.healthDot.title=j.error||''; els.healthDot.textContent=j.ok? 'Relay OK · rechecked' : 'Relay check failed'+(j.error?' · '+String(j.error).slice(0,80):''); els.healthDot.className=j.ok? 'ml-auto inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200' : 'ml-auto inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border bg-rose-50 text-rose-700 border-rose-200'; logLine('[relay] recheck: '+(j.ok?'OK':'failed '+(j.error||'')), j.ok?'text-emerald-300':'text-rose-400'); }catch(e){ logLine('[relay recheck] '+e.message,'text-rose-400'); } }; if(els.healthDot) els.healthDot.style.cursor='pointer';if(els.previewBtn) els.previewBtn.onclick=doPreview;
+if(els.runBtn) els.runBtn.onclick=async()=>{const mode=els.mode.value;const limit=parseInt(els.limit.value,10)||5;const resend=els.resend.checked;const isSend=mode==='send';if(isSend){const isLocal=String(overviewCache?.unsubscribe_base_url||'').includes('localhost');if(isLocal&&limit>10&&!confirm('Unsubscribe base is still localhost \u2014 real recipients will not reach the page. Continue anyway?'))return;if(!confirm((isSend?'SEND':'DRY RUN')+' '+limit+' via '+(overviewCache?.from?.address||'relay')+'?'))return;}setSending(true);els.runBtn.textContent=isSend?'Sending...':'Dry running...';logLine((isSend?'[send]':'[dry-run]')+' limit='+limit+(resend?' resend=1':''),'text-amber-300');els.status.textContent=(isSend?'Sending ':'Dry-running ')+limit+'...';try{const r=await fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode,limit,resend,sheet:els.useSheet.checked?'1':'0',writeSheet:els.writeSheet.checked,campaign:(els.campaignNameInput?els.campaignNameInput.value.trim():'' )})});if(!r.ok)throw new Error(await r.text());const reader=r.body.getReader();const decoder=new TextDecoder();let buf='';while(true){const{done,value}=await reader.read();if(done)break;buf+=decoder.decode(value,{stream:true});const lines=buf.split('\n');buf=lines.pop();for(const line of lines){if(!line.trim())continue;try{const evt=JSON.parse(line);if(evt.type==='overview'){els.count.textContent=String(evt.sendable??'-');els.direct.textContent=String(evt.direct??'-');els.role.textContent=String(evt.role??'-');els.suppressed.textContent=String(evt.suppressed??'-');els.deliveredInSheet.textContent=String(evt.deliveredInSheet??'-');logLine('[run] sendable='+evt.sendable+' direct='+evt.direct+' role='+evt.role,'text-slate-400');}else if(evt.type==='preview')renderPreview(evt.lead,evt.sendable);else if(evt.type==='progress'){const pct=evt.total?Math.round((evt.sent+evt.failed)/evt.total*100):0;els.progressBar.style.width=pct+'%';els.progressText.textContent='sent '+evt.sent+' failed '+evt.failed+' / '+evt.total+(evt.email?' \u2014 '+evt.email:'');if(evt.ok)logLine('[ok] '+evt.email+(evt.id?' '+evt.id:''),'text-emerald-300');else if(evt.ok===false)logLine('[fail] '+evt.email+' '+(evt.error||''),'text-rose-400');}else if(evt.type==='batch_pause'){logLine('[pause] '+evt.seconds+'s','text-amber-300');els.progressText.textContent='Batch pause '+evt.seconds+'s...';}else if(evt.type==='sheet_write'){logLine('[sheet] wrote DELIVERED to '+evt.count+' rows','text-emerald-300');}else if(evt.type==='sheet_write_error'){logLine('[sheet error] '+evt.message,'text-rose-400');}else if(evt.type==='done'){els.progressBar.style.width='100%';els.progressText.textContent='Done sent='+evt.sent+' failed='+evt.failed;logLine('[done] sent='+evt.sent+' failed='+evt.failed,'text-emerald-300');els.status.textContent='Done \u2014 sent '+evt.sent+' failed '+evt.failed+'.';if(evt.sent)loadOverview();}else if(evt.type==='error'){logLine('[error] '+evt.message,'text-rose-400');els.status.textContent='Error: '+evt.message;}}catch(_){logLine(line,'text-slate-300');}}}if(buf.trim()){try{const evt=JSON.parse(buf);if(evt.type==='done')logLine('[done] sent='+evt.sent+' failed='+evt.failed,'text-emerald-300');}catch(_){logLine(buf,'text-slate-300');}}}catch(e){els.status.textContent='Run failed: '+e.message;logLine('[run error] '+e.message,'text-rose-400');}finally{setSending(false);els.runBtn.textContent='Run';}};
+async function loadTemplate(cat){if(!cat)return;try{const r=await fetch('/api/templates/'+encodeURIComponent(cat));if(!r.ok)throw new Error(await r.text());const t=await r.json();els.tplSubject.value=t.subject||'';els.tplBody.value=t.body||'';els.tplHtml.value=t.body_html||'';els.tplStatus.textContent='Loaded '+cat+'.';}catch(e){els.tplStatus.textContent='Load failed: '+e.message;}}
+if(els.tplCategory) els.tplCategory.onchange=()=>loadTemplate(els.tplCategory.value);
+if(els.tplSave) els.tplSave.onclick=async()=>{const cat=els.tplCategory.value;if(!cat)return;const body={subject:els.tplSubject.value,body:els.tplBody.value,body_html:els.tplHtml.value};if(!body.subject||!body.body){els.tplStatus.textContent='Subject and body required.';return;}try{const r=await fetch('/api/templates/'+encodeURIComponent(cat),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());els.tplStatus.textContent='Saved '+cat+'.';logLine('[template] saved '+cat,'text-emerald-300');}catch(e){els.tplStatus.textContent='Save failed: '+e.message;logLine('[template error] '+e.message,'text-rose-400');}};
+if(els.tplDelete) els.tplDelete.onclick=async()=>{const cat=els.tplCategory.value;if(!cat)return;if(!confirm('Delete template for '+cat+'?'))return;try{const r=await fetch('/api/templates/'+encodeURIComponent(cat),{method:'DELETE'});if(!r.ok)throw new Error(await r.text());els.tplStatus.textContent='Deleted '+cat+'.';logLine('[template] deleted '+cat,'text-amber-300');loadOverview();}catch(e){els.tplStatus.textContent='Delete failed: '+e.message;}};
+const campaignsList=$('campaignsList'), campaignRefreshBtn=$('campaignRefreshBtn'), campaignDetail=$('campaignDetail'), backToCampaigns=$('backToCampaigns'), campaignTitle=$('campaignTitle'), campaignMeta=$('campaignMeta'), emailSearch=$('emailSearch'), statusFilter=$('statusFilter'), emailCountLabel=$('emailCountLabel'), emailsBody=$('emailsBody'), emailsPrev=$('emailsPrev'), emailsNext=$('emailsNext'), emailsPage=$('emailsPage'), emailDetailModal2=$('emailDetailModal2'), emailDetailTitle2=$('emailDetailTitle2'), emailDetailBody2=$('emailDetailBody2'), emailDetailClose2=$('emailDetailClose2');
+let __overviewTimer=null;
+function startOverviewTimer(){ if(__overviewTimer) return; __overviewTimer=setInterval(loadOverview, 30000); if(__overviewTimer.unref) __overviewTimer.unref(); }
+startOverviewTimer();
+loadOverview();
+loadCampaigns();
+let activeCampaign=null, emailPageIdx=0; const PAGE_SIZE=50;
+function cFmt(s){ return s ? new Date(s).toLocaleString() : '-'; }
+function cEsc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function cBadge(e){
+  if(e.repliedAt) return '<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-violet-100 text-violet-700">Replied</span>';
+  if((e.openCount||0)>0) return '<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">Opened &times;'+e.openCount+'</span>';
+  if(e.smtp==='failed'||e.bouncedAt) return '<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-700">Bounced</span>';
+  if(e.smtp==='accepted') return '<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-700">Delivered</span>';
+  return '<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">Queued</span>';
+}
+async function loadCampaigns(){
+  if(!campaignsList) return;
+  campaignsList.innerHTML='<p class="text-sm text-slate-400 italic px-4 py-6">Loading campaigns...</p>';
+  try{
+    const r=await fetch('/api/campaigns'); if(!r.ok) throw new Error(await r.text());
+    const j=await r.json(); const cs=j.campaigns||[];
+    if(!cs.length){ campaignsList.innerHTML='<p class="text-sm text-slate-400 italic px-4 py-6">No campaigns yet \u2014 send your first batch.</p>'; return; }
+    campaignsList.innerHTML=cs.map(function(c){
+      var cats=(c.categories||[]).slice(0,4).join(', ')+(c.categories&&c.categories.length>4?' ...':'');
+      return '<button onclick="openCampaign(\''+cEsc(c.campaign).replace(/\'/g,"\\'")+'\')" class="w-full text-left px-4 py-3 hover:bg-slate-50 flex flex-wrap gap-3 items-center border-b border-slate-100 last:border-b-0">'
+        +'<span class="mono text-sm font-semibold text-slate-800">'+cEsc(c.campaign)+'</span>'
+        +'<span class="text-xs text-slate-400">'+cFmt(c.firstAt)+' \u2192 '+cFmt(c.lastAt)+'</span>'
+        +'<span class="ml-auto flex gap-1.5 flex-wrap">'
+        +'<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-900 text-white">'+c.total+' total</span>'
+        +'<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-700">\u2713 '+c.delivered+'</span>'
+        +'<span class="px-2 py-0.5 rounded-full text-xs font-semibold '+(c.bounced?'bg-rose-100 text-rose-700':'bg-slate-100 text-slate-500')+'">\u2715 '+c.bounced+'</span>'
+        +'<span class="px-2 py-0.5 rounded-full text-xs font-semibold '+(c.opened?'bg-amber-100 text-amber-700':'bg-slate-100 text-slate-500')+'">\u25ce '+c.opened+' ('+c.openRate+'%)</span>'
+        +'<span class="px-2 py-0.5 rounded-full text-xs font-semibold '+(c.replied?'bg-violet-100 text-violet-700':'bg-slate-100 text-slate-500')+'">\u21a9 '+c.replied+' ('+c.replyRate+'%)</span>'
+        +'</span><span class="w-full text-xs text-slate-400 mt-1">'+cEsc(cats||'')+'</span></button>';
+    }).join('');
+  }catch(e){ campaignsList.innerHTML='<p class="text-sm text-rose-500 px-4 py-6">'+cEsc(e.message)+'</p>'; }
+}
+window.openCampaign=async function(name){
+  activeCampaign=name; emailPageIdx=0;
+  if(campaignDetail) campaignDetail.classList.remove('hidden');
+  if(campaignTitle) campaignTitle.textContent=name;
+  await loadCampaignEmails();
+  if(campaignDetail) campaignDetail.scrollIntoView({behavior:'smooth',block:'start'});
+};
+async function loadCampaignEmails(){
+  if(!activeCampaign||!emailsBody) return;
+  var q=emailSearch?emailSearch.value:''; var status=statusFilter?statusFilter.value:''; var offset=emailPageIdx*PAGE_SIZE;
+  if(campaignMeta) campaignMeta.textContent='Loading...';
+  try{
+    var p=new URLSearchParams({limit:String(PAGE_SIZE),offset:String(offset)});
+    if(q) p.set('q',q); if(status) p.set('status',status);
+    var r=await fetch('/api/campaigns/'+encodeURIComponent(activeCampaign)+'?'+p.toString());
+    if(!r.ok) throw new Error(await r.text());
+    var j=await r.json(); var camp=j.campaign; var em=j.emails;
+    if(campaignMeta) campaignMeta.textContent=camp.delivered+' delivered \u00b7 '+camp.bounced+' bounced \u00b7 '+camp.opened+' opened ('+camp.openRate+'%) \u00b7 '+camp.replied+' replied';
+    if(emailCountLabel) emailCountLabel.textContent=em.total+' emails \u00b7 page '+(emailPageIdx+1)+' of '+Math.max(1,Math.ceil(em.total/PAGE_SIZE));
+    if(emailsPage) emailsPage.textContent=(offset+1)+'\u2013'+Math.min(offset+em.emails.length,em.total)+' of '+em.total;
+    if(emailsPrev) emailsPrev.disabled=emailPageIdx===0;
+    if(emailsNext) emailsNext.disabled=offset+PAGE_SIZE>=em.total;
+    if(!em.emails.length){ emailsBody.innerHTML='<tr><td colspan="6" class="px-3 py-8 text-center text-slate-400 italic">No emails match.</td></tr>'; return; }
+    emailsBody.innerHTML=em.emails.map(function(e){return '<tr class="hover:bg-slate-50">'
+      +'<td class="px-3 py-2"><span class="mono text-xs">'+cEsc(e.email)+'</span><div class="text-xs text-slate-400">'+cEsc(e.tab||'')+(e.row?' #'+e.row:'')+'</div></td>'
+      +'<td class="px-3 py-2 text-xs">'+cEsc(e.name||'-')+'</td>'
+      +'<td class="px-3 py-2 text-xs">'+cEsc(e.category||'-')+'<div class="text-xs text-slate-400">'+cEsc(e.area||'')+'</div></td>'
+      +'<td class="px-3 py-2">'+cBadge(e)+'</td>'
+      +'<td class="px-3 py-2 text-xs text-slate-500 whitespace-nowrap">'+cFmt(e.sentAt)+'</td>'
+      +'<td class="px-3 py-2"><button onclick="openDetail2(\''+cEsc(e.email).replace(/\'/g,"\\'")+'\')" class="text-xs bg-slate-900 text-white px-2.5 py-1 rounded-full font-semibold hover:bg-black">Open</button></td>'
+      +'</tr>';}).join('');
+  }catch(e){ if(campaignMeta) campaignMeta.textContent=e.message; emailsBody.innerHTML='<tr><td colspan="6" class="px-3 py-6 text-center text-rose-500 text-xs">'+cEsc(e.message)+'</td></tr>'; }
+}
+function closeDetail2(){ if(emailDetailModal2) emailDetailModal2.classList.add('hidden'); }
+window.openDetail2=async function(email){
+  if(!emailDetailModal2||!emailDetailBody2) return;
+  emailDetailModal2.classList.remove('hidden');
+  if(emailDetailTitle2) emailDetailTitle2.textContent=email;
+  emailDetailBody2.innerHTML='<p class="text-slate-400 italic">Loading...</p>';
+  try{
+    var r=await fetch('/api/email/'+encodeURIComponent(email));
+    if(!r.ok) throw new Error(await r.text());
+    var e=await r.json();
+    var opens=(e.opens||[]).map(function(o){return '<tr><td class="px-3 py-1.5 text-xs">'+cFmt(o.at)+'</td><td class="px-3 py-1.5 text-xs mono">'+cEsc(o.ip||'-')+'</td><td class="px-3 py-1.5 text-xs truncate max-w-[16rem]">'+cEsc(o.ua||'-')+'</td></tr>';}).join('')||'<tr><td colspan="3" class="px-3 py-4 text-center text-slate-400 italic text-xs">No opens yet.</td></tr>';
+    emailDetailBody2.innerHTML=''
+      +'<div class="grid grid-cols-2 gap-3 text-xs">'
+      +'<div class="bg-slate-50 border border-slate-200 rounded-xl p-3"><p class="font-bold uppercase tracking-wide text-slate-500">Email</p><p class="mono mt-1">'+cEsc(e.email)+'</p><p class="text-slate-500 mt-1">'+cEsc(e.name||'')+' \u00b7 '+cEsc(e.category||'')+' \u00b7 '+cEsc(e.area||'')+'</p></div>'
+      +'<div class="bg-slate-50 border border-slate-200 rounded-xl p-3"><p class="font-bold uppercase tracking-wide text-slate-500">Campaign</p><p class="mono mt-1">'+cEsc(e.campaign||'-')+'</p><p class="text-slate-500 mt-1">Tab '+cEsc(e.tab||'-')+' row '+(e.row||'-')+'</p></div>'
+      +'<div class="bg-slate-50 border border-slate-200 rounded-xl p-3"><p class="font-bold uppercase tracking-wide text-slate-500">Delivery</p><p class="mt-1">'+cBadge(e)+'</p><p class="text-slate-500 mt-1">Sent '+cFmt(e.sentAt)+'</p>'+(e.bouncedAt?'<p class="text-rose-600">Bounced '+cFmt(e.bouncedAt)+': '+cEsc(e.bounceDetail||e.failReason||'')+'</p>':'')+'<p class="text-slate-500 mono text-xs break-all">'+cEsc(e.smtpDetail||'')+'</p></div>'
+      +'<div class="bg-slate-50 border border-slate-200 rounded-xl p-3"><p class="font-bold uppercase tracking-wide text-slate-500">Engagement</p><p class="mt-1">Opens: <b>'+(e.openCount||0)+'</b> \u00b7 Replied: <b>'+(e.repliedAt?'yes':'no')+'</b></p><p class="text-slate-500 mt-1">First '+cFmt(e.firstOpenAt)+' \u00b7 Last '+cFmt(e.lastOpenAt)+'</p><p class="text-slate-500 mt-1">Replied '+cFmt(e.repliedAt)+(e.replySubject?': '+cEsc(e.replySubject):'')+'</p><p class="text-slate-500 truncate">'+cEsc(e.replySnippet||'')+'</p></div>'
+      +'</div><div><p class="font-bold uppercase tracking-wide text-slate-500 text-xs">Opens ('+(e.openCount||0)+')</p><div class="border border-slate-200 rounded-xl overflow-hidden mt-2"><table class="w-full text-left"><thead class="bg-slate-50 text-slate-500 uppercase text-xs"><tr><th class="px-3 py-2">When</th><th class="px-3 py-2">IP</th><th class="px-3 py-2">User-Agent</th></tr></thead><tbody class="divide-y divide-slate-100">'+opens+'</tbody></table></div></div>'
+      +'<p class="text-xs text-slate-400">Message-ID: <span class="mono">'+cEsc(e.messageId||'-')+'</span></p>';
+  }catch(e2){ emailDetailBody2.innerHTML='<p class="text-rose-500 text-sm">'+cEsc(e2.message)+'</p>'; }
+};
+if(emailDetailClose2) emailDetailClose2.onclick=closeDetail2;
+if(emailDetailModal2) emailDetailModal2.addEventListener('click',function(ev){if(ev.target===emailDetailModal2) closeDetail2();});
+if(campaignRefreshBtn) campaignRefreshBtn.onclick=loadCampaigns;
+if(backToCampaigns) backToCampaigns.onclick=function(){activeCampaign=null; if(campaignDetail) campaignDetail.classList.add('hidden');};
+if(emailSearch){var _st=null; emailSearch.addEventListener('input',function(){clearTimeout(_st);_st=setTimeout(function(){emailPageIdx=0;loadCampaignEmails();},250);});}
+if(statusFilter) statusFilter.addEventListener('change',function(){emailPageIdx=0;loadCampaignEmails();});
+if(emailsPrev) emailsPrev.onclick=function(){if(emailPageIdx>0){emailPageIdx--;loadCampaignEmails();}};
+if(emailsNext) emailsNext.onclick=function(){emailPageIdx++;loadCampaignEmails();};
+
+// ---- Tabs ----
+(function(){
+  var panes={compose:document.getElementById('tab-compose'),templates:document.getElementById('tab-templates'),history:document.getElementById('tab-history')};
+  function activate(tab){
+    document.querySelectorAll('.tab-btn').forEach(function(b){
+      var on=b.getAttribute('data-tab')===tab;
+      b.setAttribute('aria-selected', on?'true':'false');
+      b.className = on ? 'tab-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-extrabold tracking-widest uppercase bg-slate-900 text-white shadow-sm' : 'tab-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-extrabold tracking-widest uppercase text-slate-600 hover:bg-slate-50';
+    });
+    Object.entries(panes).forEach(function(kv){ var k=kv[0],el=kv[1]; if(el) el.classList.toggle('hidden', k!==tab); });
+    try{ localStorage.setItem('email-tool-tab', tab); }catch(_){}
+  }
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.addEventListener('click', function(){ activate(b.getAttribute('data-tab')); }); });
+  try{ var saved=localStorage.getItem('email-tool-tab'); if(saved && panes[saved]) activate(saved); }catch(_){}
+  window.activateEmailTab=activate;
+})();
+// Template helpers
+(function(){
+  var catSel=document.getElementById('tplCategory');
+  var catNew=document.getElementById('tplCategoryNew');
+  var subj=document.getElementById('tplSubject');
+  var body=document.getElementById('tplBody');
+  var html=document.getElementById('tplHtml');
+  var pSubj=document.getElementById('tplPreviewSubject');
+  var pBody=document.getElementById('tplPreviewBody');
+  var pHtml=document.getElementById('tplPreviewHtml');
+  var pCat=document.getElementById('tplPreviewCat');
+  var dupBtn=document.getElementById('tplDuplicate');
+  function livePreview(){
+    if(pSubj) pSubj.textContent=subj ? subj.value : '';
+    if(pBody) pBody.textContent=body ? body.value : '';
+    if(pHtml) pHtml.innerHTML= html && html.value ? html.value : '<span class="text-slate-400 italic text-xs">No HTML — plain body will be sent.</span>';
+    var cur=(catNew && catNew.value.trim()) ? catNew.value.trim() : (catSel ? catSel.value : '');
+    if(pCat) pCat.textContent=cur ? cur : '-';
+  }
+  if(subj) subj.addEventListener('input', livePreview);
+  if(body) body.addEventListener('input', livePreview);
+  if(html) html.addEventListener('input', livePreview);
+  if(catNew) catNew.addEventListener('input', livePreview);
+  if(catSel) catSel.addEventListener('change', function(){ if(catNew) catNew.value=''; livePreview(); });
+  var polls=0;
+  var iv=setInterval(function(){
+    if(typeof loadTemplate==='function'){
+      clearInterval(iv);
+      var orig=loadTemplate;
+      window.loadTemplate = async function(cat){
+        await orig(cat);
+        livePreview();
+      };
+    }
+    if(++polls>20) clearInterval(iv);
+  }, 500);
+  var lastFocus=null;
+  [subj, body, html].forEach(function(el){
+    if(!el) return;
+    el.addEventListener('focus', function(){ lastFocus=el; });
+    el.addEventListener('click', function(){ lastFocus=el; });
+  });
+  document.querySelectorAll('.tok-chip').forEach(function(chip){
+    chip.addEventListener('click', function(){
+      var tok='{{'+chip.getAttribute('data-ins')+'}}';
+      var target=lastFocus || body || subj;
+      if(!target) return;
+      var s=target.selectionStart ?? target.value.length;
+      var e=target.selectionEnd ?? target.value.length;
+      target.value = target.value.slice(0,s) + tok + target.value.slice(e);
+      target.focus();
+      try{ target.setSelectionRange(s+tok.length, s+tok.length);}catch(_){}
+      livePreview();
+    });
+  });
+  if(dupBtn) dupBtn.addEventListener('click', function(){
+    var from=(catSel?catSel.value:'').trim();
+    var to=(catNew?catNew.value.trim():'');
+    if(!from){ alert('Pick a source category to duplicate from.'); return; }
+    if(!to){ alert('Type the new category name on the right, then Duplicate.'); return; }
+    if(!confirm('Duplicate "'+from+'" → "'+to+'"?')) return;
+    fetch('/api/templates/'+encodeURIComponent(from)).then(function(r){ if(!r.ok) throw new Error('Source not found'); return r.json(); }).then(function(t){
+      return fetch('/api/templates/'+encodeURIComponent(to), {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({subject:t.subject, body:t.body, body_html:t.body_html||''})});
+    }).then(function(r){ if(!r.ok) throw new Error('Save failed'); return r.text(); }).then(function(){
+      var st=document.getElementById('tplStatus'); if(st) st.textContent='Duplicated '+from+' → '+to+'.';
+      if(typeof loadOverview==='function') loadOverview();
+      setTimeout(function(){ if(catSel){ catSel.value=to; if(catNew) catNew.value=''; if(typeof loadTemplate==='function') loadTemplate(to); }}, 400);
+    }).catch(function(e){ alert(e.message); });
+  });
+  var saveBtn=document.getElementById('tplSave');
+  if(saveBtn){
+    saveBtn.addEventListener('click', function(ev){
+      var v=catNew?catNew.value.trim():'';
+      if(v && catSel){
+        var found=false;
+        for(var i=0;i<catSel.options.length;i++) if(catSel.options[i].value===v) found=true;
+        if(!found){
+          var o=document.createElement('option'); o.value=v; o.textContent=v; catSel.appendChild(o);
+        }
+        catSel.value=v;
+        catNew.value='';
+        livePreview();
+      }
+    }, true);
+  }
+  setTimeout(livePreview, 700);
+})();
+
+</script>
+</body>
+</html>

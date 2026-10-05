@@ -1,0 +1,33 @@
+# Keep the build context lean and, more importantly, keep a container rebuild
+# from erasing live state. output/, the campaign state files, and the local DB
+# are all mounted volumes - never baked into an image layer.
+
+# 283MB of dependencies; installed inside the image instead.
+node_modules/
+
+# 20MB and 97k rows of scraped PII. Stays on the host volume.
+output/
+
+# Live campaign state. If these landed in an image, a rebuild would silently
+# reset every DONE badge and could make the queue re-scrape completed cities.
+campaign-progress.json
+campaign-state.json
+leads.db
+leads.db.*
+
+# Credentials must come from the environment, not from the build context.
+gsheet-key.json
+service-account.json
+*.pem
+
+# Git and editor noise.
+.git/
+.gitignore
+*.md
+.vscode/
+.idea/
+
+# Diagnostics from local runs - large and irrelevant to the deployed service.
+server-out.log
+*.log
+nohup.out

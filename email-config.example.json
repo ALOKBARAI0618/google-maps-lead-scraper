@@ -1,0 +1,30 @@
+{
+  "smtp": {
+    "host": "mail.cotechagency.com",
+    "port": 587,
+    "user": "kaira@cotechagency.com",
+    "pass": "REPLACE_ME"
+  },
+  "from": {
+    "name": "Kaira",
+    "address": "kaira@cotechagency.com"
+  },
+  "reply_to": "kaira@cotechagency.com",
+  "unsubscribe_base_url": "http://localhost:3000",
+  "business_address": "2nd Floor, Cotech Agency Building, opposite Khalsa College Near mohini park, Amritsar, Punjab 143001, India",
+  "subject": "Quick question about {{category}} work in {{area}}",
+  "per_hour": 200,
+  "per_batch": 50,
+  "batch_pause_seconds": 30,
+  "sender_name": "Kaira",
+  "imap": {
+    "host": "mail.cotechagency.com",
+    "port": 993,
+    "secure": true,
+    "user": "kaira@cotechagency.com",
+    "pass": "REPLACE_ME",
+    "mailbox": "INBOX",
+    "poll_seconds": 180
+  },
+  "pixel_base_url": ""
+}

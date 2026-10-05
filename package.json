@@ -6,10 +6,19 @@
   "scripts": {
     "scrape": "node scraper.js",
     "call": "node lead-caller.js",
-    "install-browser": "npx playwright install chromium"
+    "install-browser": "npx playwright install chromium",
+    "email-tool": "node email-campaign-tool/server.js",
+    "email-tool:dev": "EMAIL_TOOL_PORT=3003 node email-campaign-tool/server.js"
   },
   "dependencies": {
     "exceljs": "^4.4.0",
-    "playwright": "^1.52.0"
+    "express": "^4.22.2",
+    "googleapis": "^181.0.0",
+    "imapflow": "^1.7.8",
+    "mailparser": "^3.8.0",
+    "nedb-promises": "^6.2.4",
+    "nodemailer": "^10.0.13",
+    "playwright": "^1.52.0",
+    "socket.io": "^4.8.3"
   }
 }

@@ -141,7 +141,10 @@ async function findEmail(websiteUrl) {
     if (emails.length > 0) return emails[0];
 
     // 2) Try common contact pages
-    const contactPaths = ['/contact', '/contact-us', '/about', '/about-us'];
+    const contactPaths = [
+      '/contact', '/contact-us', '/about', '/about-us',
+      '/contact-me', '/reach-us', '/get-in-touch', '/contact-page'
+    ];
     for (const p of contactPaths) {
       try {
         const contactUrl = new URL(p, base).href;

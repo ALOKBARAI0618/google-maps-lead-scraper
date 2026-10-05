@@ -1,0 +1,1326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maps Lead Scraper UI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="cities-data.js"></script>
+    <style>
+        *{font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+        .mono{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace}
+        .hint{font-size:11px;color:#94a3b8}
+        .card{transition:box-shadow .15s}
+        .card:hover{box-shadow:0 6px 20px rgba(15,23,42,.07)}
+        .console-window {
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        }
+        .console-log {
+            border-bottom: 1px solid #333;
+            padding: 2px 0;
+        }
+        .status-dot {
+            height: 10px;
+            width: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans">
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <header class="mb-8 text-center">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">📍 Maps Lead Scraper</h1>
+            <p class="text-gray-600">Extract high-quality business leads from Google Maps effortlessly</p>
+
+            <div class="mt-6 flex justify-center space-x-4">
+                <button id="tabScraper" class="px-6 py-2 rounded-full font-semibold transition bg-blue-600 text-white shadow-md">🚀 Scraper</button>
+                <button id="tabDashboard" class="px-6 py-2 rounded-full font-semibold transition bg-white text-gray-600 hover:bg-gray-200 shadow-sm">📊 Dashboard</button>
+                <button id="tabArchive" class="px-6 py-2 rounded-full font-semibold transition bg-white text-gray-600 hover:bg-gray-200 shadow-sm">📁 File Archive</button>
+                <button id="tabCampaign" class="px-6 py-2 rounded-full font-semibold transition bg-white text-gray-600 hover:bg-gray-200 shadow-sm">🎯 Campaign</button>
+            </div>
+        </header>
+
+        <!-- Scraper View -->
+        <div id="viewScraper" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Configuration Panel -->
+            <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md border border-gray-200">
+                <h2 class="text-xl font-semibold mb-6 text-gray-700 border-b pb-2">Configuration</h2>
+
+                <form id="scraperForm" class="space-y-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="block text-sm font-medium text-gray-700">Search Mode</label>
+                        <div class="flex items-center space-x-2">
+                            <input type="radio" name="mode" id="modeSingle" value="single" checked class="h-4 w-4 text-blue-600">
+                            <label for="modeSingle" class="text-xs text-gray-600">Single</label>
+                            <input type="radio" name="mode" id="modeMulti" value="multi" class="h-4 w-4 text-blue-600">
+                            <label for="modeMulti" class="text-xs text-gray-600">Multi-Query</label>
+                        </div>
+                    </div>
+
+                    <div id="singleQueryGroup">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Search Query</label>
+                        <input type="text" id="query" placeholder="e.g. dentists, digital marketing"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 outline-none">
+                    </div>
+
+                    <div id="multiQueryGroup" class="hidden">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Search Queries (one per line)</label>
+                        <textarea id="multiQuery" rows="4" placeholder="dentists Mumbai&#10;plumbers Delhi&#10;cafes Bangalore"
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 outline-none"></textarea>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">City</label>
+                        <input type="text" id="city" placeholder="e.g. Dallas, Mumbai"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 outline-none">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Areas (Optional)</label>
+                        <input type="text" id="areas" placeholder="Area1, Area2, Area3"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 outline-none">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Limit</label>
+                            <input type="number" id="limit" value="0" min="0"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 outline-none">
+                        </div>
+                        <div class="flex items-center mt-6">
+                            <input type="checkbox" id="quick" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                            <label for="quick" class="ml-2 block text-sm text-gray-700">Quick Mode</label>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center">
+                        <input type="checkbox" id="headed" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                        <label for="headed" class="ml-2 block text-sm text-gray-700">Headed Browser</label>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Proxy List (Optional - one per line)</label>
+                        <textarea id="proxy" rows="3" placeholder="http://user:pass@host:port"
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 outline-none"></textarea>
+                    </div>
+
+                    <div class="pt-4">
+                        <button type="submit" id="startBtn"
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-200 ease-in-out flex items-center justify-center">
+                            <span id="btnText">🚀 Start Scraping</span>
+                            <div id="loader" class="hidden ml-2 animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                        </button>
+                        <button type="button" id="stopBtn" disabled
+                                class="w-full mt-2 bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-md transition duration-200 ease-in-out hidden">
+                            🛑 Stop Scraper
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Console and Files Panel -->
+            <div class="lg:col-span-2 space-y-8">
+                <!-- Live Console -->
+                <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+                    <div class="bg-gray-800 px-4 py-2 flex justify-between items-center">
+                        <div class="flex items-center space-x-2">
+                            <div id="statusDot" class="status-dot bg-gray-500"></div>
+                            <span class="text-xs font-mono text-gray-300 uppercase tracking-wider">Live Scraper Console</span>
+                        </div>
+                        <button id="clearConsole" class="text-xs text-gray-400 hover:text-white underline">Clear Logs</button>
+                    </div>
+                    <div id="console" class="console-window h-96 overflow-y-auto p-4 text-sm whitespace-pre-wrap">
+                        <div class="text-gray-500 italic">Ready to start...</div>
+                    </div>
+                </div>
+
+                <!-- File Downloads -->
+                <div class="bg-white p-6 rounded-xl shadow-md border border-gray-200">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold text-gray-700">Generated Lead Files</h2>
+                        <button id="refreshFiles" class="text-sm text-blue-600 hover:text-blue-800 font-medium">🔄 Refresh</button>
+                    </div>
+                    <div id="fileList" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <p class="text-gray-400 italic text-sm col-span-2">No files generated yet.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard View -->
+        <div id="viewDashboard" class="hidden space-y-8">
+            <!-- Stats Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 text-center">
+                    <p class="text-sm text-gray-500 font-medium uppercase">Total Leads</p>
+                    <p id="statTotal" class="text-3xl font-bold text-gray-800">0</p>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 text-center border-l-4 border-l-green-500">
+                    <p class="text-sm text-gray-500 font-medium uppercase">Hot Targets</p>
+                    <p id="statHot" class="text-3xl font-bold text-green-600">0</p>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 text-center border-l-4 border-l-blue-500">
+                    <p class="text-sm text-gray-500 font-medium uppercase">Real Website</p>
+                    <p id="statWeb" class="text-3xl font-bold text-blue-600">0</p>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 text-center border-l-4 border-l-red-500">
+                    <p class="text-sm text-gray-500 font-medium uppercase">No Phone</p>
+                    <p id="statNoPhone" class="text-3xl font-bold text-red-600">0</p>
+                </div>
+            </div>
+
+            <!-- Leads Table -->
+            <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div class="flex items-center space-x-4">
+                        <h2 class="text-xl font-semibold text-gray-700">Leads Explorer</h2>
+                        <button id="syncGSheetsBtn" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-md text-xs font-bold transition flex items-center shadow-sm">
+                            <span class="mr-1">📊</span> Sync to Google Sheets
+                        </button>
+                    </div>
+                    <div class="relative w-full md:w-64">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
+                            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        </span>
+                        <input type="text" id="leadSearch" placeholder="Filter leads..."
+                               class="pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 outline-none w-full">
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-gray-50 text-gray-600 text-xs uppercase font-semibold">
+                            <tr>
+                                <th class="px-6 py-3 border-b cursor-pointer hover:bg-gray-100 select-none" onclick="sortLeads('grade')">Grade <span id="sortArrow-grade"></span></th>
+                                <th class="px-6 py-3 border-b cursor-pointer hover:bg-gray-100 select-none" onclick="sortLeads('Name')">Name <span id="sortArrow-Name"></span></th>
+                                <th class="px-6 py-3 border-b cursor-pointer hover:bg-gray-100 select-none" onclick="sortLeads('Phone 1')">Phone <span id="sortArrow-Phone 1"></span></th>
+                                <th class="px-6 py-3 border-b cursor-pointer hover:bg-gray-100 select-none" onclick="sortLeads('Website')">Website <span id="sortArrow-Website"></span></th>
+                                <th class="px-6 py-3 border-b cursor-pointer hover:bg-gray-100 select-none" onclick="sortLeads('Email')">Email <span id="sortArrow-Email"></span></th>
+                                <th class="px-6 py-3 border-b cursor-pointer hover:bg-gray-100 select-none" onclick="sortLeads('Rating')">Rating <span id="sortArrow-Rating"></span></th>
+                                <th class="px-6 py-3 border-b">Type</th>
+                                <th class="px-6 py-3 border-b text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leadsTableBody" class="text-sm text-gray-700 divide-y divide-gray-200">
+                            <tr>
+                                <td colspan="8" class="px-6 py-10 text-center text-gray-400 italic">No leads loaded. Start a scrape or refresh the page.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- File Archive View -->
+        <div id="viewArchive" class="hidden space-y-8">
+            <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                    <h2 class="text-xl font-semibold text-gray-700">Lead File Archive</h2>
+                    <button id="refreshArchive" class="text-sm text-blue-600 hover:text-blue-800 font-medium">🔄 Refresh</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-gray-50 text-gray-600 text-xs uppercase font-semibold">
+                            <tr>
+                                <th class="px-6 py-3 border-b">Filename</th>
+                                <th class="px-6 py-3 border-b">Date Modified</th>
+                                <th class="px-6 py-3 border-b">Size</th>
+                                <th class="px-6 py-3 border-b text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="archiveTableBody" class="text-sm text-gray-700 divide-y divide-gray-200">
+                            <tr>
+                                <td colspan="4" class="px-6 py-10 text-center text-gray-400 italic">No files found in archive.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Campaign View -->
+        <div id="viewCampaign" class="hidden space-y-8">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- Categories -->
+                <div class="bg-white p-6 rounded-xl shadow-md border border-gray-200">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-700 border-b pb-2">1. Select Categories</h2>
+                    <div id="categoryCheckboxes" class="grid grid-cols-2 gap-3 text-sm text-gray-700">
+                        <!-- Categories injected here -->
+                    </div>
+                </div>
+
+                <!-- Cities & Config -->
+                <div class="bg-white p-6 rounded-xl shadow-md border border-gray-200 space-y-4">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-700 border-b pb-2">2. Target Cities & Settings</h2>
+
+                    <!-- Location Selector -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                        <select id="campaignCountry" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 outline-none">
+                            <option value="">Select Country</option>
+                        </select>
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="block text-sm font-medium text-gray-700">States <span class="text-xs text-gray-400">(multi-select)</span></label>
+                            <div class="flex space-x-2">
+                                <button type="button" id="selectAllStatesBtn" class="text-xs text-blue-600 hover:underline">Select All</button>
+                                <span class="text-gray-300">|</span>
+                                <button type="button" id="clearStatesBtn" class="text-xs text-gray-500 hover:underline">Clear</button>
+                            </div>
+                        </div>
+                        <div id="campaignStatesList" class="border border-gray-300 rounded-md p-2 grid grid-cols-2 gap-1.5 max-h-44 overflow-y-auto text-sm text-gray-700 bg-gray-50">
+                            <span class="text-gray-400 italic col-span-2 px-2 py-1">Select a country first</span>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-1">✓ <span class="font-medium text-green-600">Done</span> badge = this state was already fully scraped for a selected category.</p>
+                    </div>
+                    <button id="addStateCitiesBtn" class="w-full bg-blue-100 text-blue-700 font-medium py-2 rounded-md hover:bg-blue-200 transition text-sm">
+                        ➕ Add all cities of selected States
+                    </button>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Selected Cities (one per line)</label>
+                        <textarea id="campaignCities" rows="6" placeholder="Cities will appear here..."
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 outline-none font-mono text-sm"></textarea>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Delay Between Queries (sec)</label>
+                            <input type="number" id="campaignDelay" value="10" min="5" max="120"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 outline-none">
+                            <p class="text-xs text-gray-400 mt-1">Higher = safer against blocks</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Limit per City (0 = All)</label>
+                            <input type="number" id="campaignLimit" value="0" min="0"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 outline-none">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Proxy List (Optional)</label>
+                        <textarea id="campaignProxy" rows="3" placeholder="http://ip:port (one per line)"
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 outline-none font-mono text-sm"></textarea>
+                    </div>
+
+                    <div class="pt-2 flex space-x-4">
+                        <button id="generateCampaignBtn" class="flex-1 bg-gray-800 hover:bg-gray-900 text-white font-bold py-2 px-4 rounded-md transition">
+                            ⚙️ Generate Queue
+                        </button>
+                        <button id="pauseCampaignBtn" class="hidden flex-1 bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-md transition">⏸ Pause</button>
+                        <button id="resumeCampaignBtn" class="hidden flex-1 bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded-md transition">▶ Resume</button>
+                        <button id="startCampaignBtn" disabled class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition disabled:opacity-50">
+                            🚀 Start Campaign
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Queue Preview -->
+            <div class="bg-white p-6 rounded-xl shadow-md border border-gray-200">
+                <div class="flex justify-between items-center mb-4 border-b pb-2">
+                    <h2 class="text-xl font-semibold text-gray-700">3. Campaign Queue Preview</h2>
+                    <button id="resetProgressBtn" class="text-xs text-red-500 hover:text-red-700 hover:underline">
+                        🗑 Reset Progress History
+                    </button>
+                </div>
+                <div id="campaignPreview" class="text-sm text-gray-500 italic">Generate a queue to see the search terms...</div>
+            </div>
+        </div>
+
+
+
+
+        <!-- Email UI lives on :3003 (email-campaign-tool) -->
+
+
+                <!-- Lead Viewer Modal -->
+        <div id="leadViewerModal" class="hidden fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+            <div class="bg-white w-full max-w-6xl h-5/6 rounded-2xl shadow-2xl overflow-hidden relative animate-in fade-in zoom-in duration-200 flex flex-col">
+                <div class="bg-gray-800 px-6 py-4 flex justify-between items-center text-white">
+                    <h3 class="text-lg font-bold flex items-center">
+                        <span class="mr-2">📄</span> Lead File Viewer
+                    </h3>
+                    <button id="closeViewer" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+                </div>
+                <div class="p-6 overflow-auto flex-grow">
+                    <div id="viewerTableContainer" class="overflow-x-auto">
+                        <!-- Table will be rendered here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Calling Mode Modal -->
+        <div id="crmModal" class="hidden fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+            <div class="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden relative animate-in fade-in zoom-in duration-200">
+                <div class="bg-gray-800 px-6 py-4 flex justify-between items-center text-white">
+                    <h3 class="text-lg font-bold flex items-center">
+                        <span class="mr-2">📞</span> Lead Calling Mode
+                    </h3>
+                    <button id="closeCrm" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+                </div>
+
+                <div class="p-6 space-y-6">
+                    <!-- Lead Info Card -->
+                    <div class="bg-blue-50 p-4 rounded-xl border border-blue-100 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="md:col-span-2 flex justify-between items-start">
+                            <div>
+                                <p class="text-xs text-blue-500 font-bold uppercase">Business Name</p>
+                                <p id="crmName" class="text-xl font-bold text-gray-800">---</p>
+                            </div>
+                            <div id="crmGradeBadge"></div>
+                        </div>
+                        <div>
+                            <p class="text-xs text-blue-500 font-bold uppercase">Phone Number</p>
+                            <p id="crmPhone" class="text-xl font-bold text-gray-800">---</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-blue-500 font-bold uppercase">Email Address</p>
+                            <p id="crmEmail" class="text-lg font-semibold text-gray-800">---</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-blue-500 font-bold uppercase">Website</p>
+                            <p id="crmWebsite" class="text-gray-600 truncate">---</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-blue-500 font-bold uppercase">Rating/Reviews</p>
+                            <p id="crmRating" class="text-gray-600">---</p>
+                        </div>
+                        <div class="md:col-span-2 border-t pt-3 mt-1">
+                            <p class="text-xs text-blue-500 font-bold uppercase mb-2">Social Profiles</p>
+                            <div id="crmSocials" class="flex space-x-3">
+                                <!-- Social icons go here -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CRM Statuses -->
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <button onclick="updateLeadStatus('call_done')" class="p-3 rounded-lg border-2 border-green-200 hover:bg-green-50 text-green-700 font-semibold transition text-center">
+                            ✅ Call Done
+                        </button>
+                        <button onclick="updateLeadStatus('not_call')" class="p-3 rounded-lg border-2 border-red-200 hover:bg-red-50 text-red-700 font-semibold transition text-center">
+                            🚫 Not Call
+                        </button>
+                        <button onclick="updateLeadStatus('interested')" class="p-3 rounded-lg border-2 border-blue-200 hover:bg-blue-50 text-blue-700 font-semibold transition text-center">
+                            🌟 Interested
+                        </button>
+                        <button onclick="updateLeadStatus('rejected')" class="p-3 rounded-lg border-2 border-gray-200 hover:bg-gray-50 text-gray-700 font-semibold transition text-center">
+                            ❌ Rejected
+                        </button>
+                        <button onclick="updateLeadStatus('no_answer')" class="p-3 rounded-lg border-2 border-orange-200 hover:bg-orange-50 text-orange-700 font-semibold transition text-center">
+                            📵 No Answer
+                        </button>
+                        <button id="waBtn" class="p-3 rounded-lg border-2 border-green-500 hover:bg-green-50 text-green-600 font-semibold transition text-center flex items-center justify-center">
+                            💬 WhatsApp
+                        </button>
+                    </div>
+
+                    <!-- Notes & Follow-up -->
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Follow-up Date</label>
+                            <input type="text" id="crmFollowUp" placeholder="e.g. Tomorrow 4 PM"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Call Notes / Discussion</label>
+                            <textarea id="crmNotes" rows="3" placeholder="What was discussed on the call?"
+                                      class="w-full px-3 py-2 border border-gray-300 rounded-md outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                        </div>
+                        <button id="saveCrmBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-lg">
+                            💾 Save All Updates
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('scraperForm');
+        const consoleEl = document.getElementById('console');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const btnText = document.getElementById('btnText');
+        const loader = document.getElementById('loader');
+        const statusDot = document.getElementById('statusDot');
+        const fileListEl = document.getElementById('fileList');
+        const clearConsoleBtn = document.getElementById('clearConsole');
+        const refreshFilesBtn = document.getElementById('refreshFiles');
+
+        // Mode Toggling
+        const modeSingle = document.getElementById('modeSingle');
+        const modeMulti = document.getElementById('modeMulti');
+        const singleQueryGroup = document.getElementById('singleQueryGroup');
+        const multiQueryGroup = document.getElementById('multiQueryGroup');
+
+        modeSingle.onchange = () => {
+            singleQueryGroup.classList.remove('hidden');
+            multiQueryGroup.classList.add('hidden');
+        };
+        modeMulti.onchange = () => {
+            singleQueryGroup.classList.add('hidden');
+            multiQueryGroup.classList.remove('hidden');
+        };
+
+        const tabScraper = document.getElementById('tabScraper');
+        const tabDashboard = document.getElementById('tabDashboard');
+        const tabArchive = document.getElementById('tabArchive');
+        const tabCampaign = document.getElementById('tabCampaign');
+        const viewScraper = document.getElementById('viewScraper');
+        const viewDashboard = document.getElementById('viewDashboard');
+        const viewArchive = document.getElementById('viewArchive');
+        const viewCampaign = document.getElementById('viewCampaign');
+
+        const statTotal = document.getElementById('statTotal');
+        const statHot = document.getElementById('statHot');
+        const statWeb = document.getElementById('statWeb');
+        const statNoPhone = document.getElementById('statNoPhone');
+        const leadsTableBody = document.getElementById('leadsTableBody');
+        const leadSearch = document.getElementById('leadSearch');
+        const syncGSheetsBtn = document.getElementById('syncGSheetsBtn');
+
+        // CRM Modal Elements
+        const crmModal = document.getElementById('crmModal');
+        const closeCrm = document.getElementById('closeCrm');
+        const crmName = document.getElementById('crmName');
+        const crmPhone = document.getElementById('crmPhone');
+        const crmEmail = document.getElementById('crmEmail');
+        const crmWebsite = document.getElementById('crmWebsite');
+        const crmRating = document.getElementById('crmRating');
+        const crmFollowUp = document.getElementById('crmFollowUp');
+        const crmNotes = document.getElementById('crmNotes');
+        const waBtn = document.getElementById('waBtn');
+        const saveCrmBtn = document.getElementById('saveCrmBtn');
+
+        // Lead Viewer Elements
+        const leadViewerModal = document.getElementById('leadViewerModal');
+        const closeViewer = document.getElementById('closeViewer');
+        const viewerTableContainer = document.getElementById('viewerTableContainer');
+
+        let allLeads = [];
+        let currentLead = null;
+        const socket = io();
+
+        function switchTab(activeTab) {
+            const tabs = {
+                'scraper': { tab: tabScraper, view: viewScraper },
+                'dashboard': { tab: tabDashboard, view: viewDashboard },
+                'archive': { tab: tabArchive, view: viewArchive },
+                'campaign': { tab: tabCampaign, view: viewCampaign }
+            };
+
+            Object.keys(tabs).forEach(key => {
+                const { tab, view } = tabs[key];
+                if (key === activeTab) {
+                    tab.className = 'px-6 py-2 rounded-full font-semibold transition bg-blue-600 text-white shadow-md';
+                    view.classList.remove('hidden');
+                } else {
+                    tab.className = 'px-6 py-2 rounded-full font-semibold transition bg-white text-gray-600 hover:bg-gray-200 shadow-sm';
+                    view.classList.add('hidden');
+                }
+            });
+
+            if (activeTab === 'dashboard') loadDashboardData();
+            if (activeTab === 'archive') loadArchiveData();
+        }
+
+        tabScraper.onclick = () => switchTab('scraper');
+        tabDashboard.onclick = () => switchTab('dashboard');
+        tabArchive.onclick = () => switchTab('archive');
+        tabCampaign.onclick = () => switchTab('campaign');
+
+        // ===== CAMPAIGN LOGIC =====
+        // Names are spelled to match the Google Sheets tab that gsheet-uploader's
+        // categorize() maps them onto ("Dentist", "plumber"), so the campaign,
+        // the progress file and the sheet all use one label per category.
+        const CAMPAIGN_CATEGORIES = [
+            'Restaurants', 'Plumber', 'Electricians', 'Dentist', 'Roofing Contractors',
+            'HVAC', 'Auto Repair', 'Lawyers', 'Real Estate Agents', 'Cleaning Services',
+            'Construction Companies', 'IT Companies', 'Digital Marketing Agencies', 'Accountants',
+            'Salons', 'Gyms', 'Hotels', 'Cafes', 'Landscaping', 'Photographers'
+        ];
+        let generatedQueue = [];
+
+        // Populate category checkboxes
+        const catContainer = document.getElementById('categoryCheckboxes');
+        catContainer.innerHTML = CAMPAIGN_CATEGORIES.map(cat =>
+            `<label class="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                <input type="checkbox" value="${cat}" class="campaign-cat h-4 w-4 text-blue-600 rounded border-gray-300">
+                <span>${cat}</span>
+            </label>`
+        ).join('');
+
+        // Load saved progress (which category+state combos are done) on page load
+        loadCampaignProgress().then(() => renderStates());
+
+        // Location Dropdowns Logic
+        const countrySelect = document.getElementById('campaignCountry');
+        const statesList = document.getElementById('campaignStatesList');
+        const citiesTextarea = document.getElementById('campaignCities');
+        let campaignProgress = {}; // { "Category": { "State": [city, ...] } }
+
+        // Fetch saved progress from server so badges survive restarts
+        async function loadCampaignProgress() {
+            try {
+                const res = await fetch('/campaign/progress');
+                if (res.ok) campaignProgress = await res.json();
+            } catch (e) { campaignProgress = {}; }
+        }
+
+        function getSelectedCategories() {
+            return Array.from(document.querySelectorAll('.campaign-cat:checked')).map(c => c.value);
+        }
+
+        function getSelectedStates() {
+            return Array.from(statesList.querySelectorAll('.campaign-state:checked')).map(c => c.value);
+        }
+
+        // How many of a state's cities are finished, and whether all of them are.
+        function progressForState(state, selectedCats) {
+            const allCities = (COUNTRY_STATE_CITIES[countrySelect.value] || {})[state] || [];
+            if (allCities.length === 0) return { done: 0, total: 0, complete: false };
+            const finished = new Set();
+            selectedCats.forEach(cat => {
+                const byState = campaignProgress[cat] || {};
+                // Both storage shapes: {State: [cities]} and the legacy [State, ...]
+                if (Array.isArray(byState)) (byState.includes(state) ? allCities : []).forEach(c => finished.add(c));
+                else (byState[state] || []).forEach(c => finished.add(c));
+            });
+            return {
+                done: finished.size,
+                total: allCities.length,
+                complete: finished.size >= allCities.length,
+            };
+        }
+
+        // Populate countries
+        Object.keys(COUNTRY_STATE_CITIES).forEach(country => {
+            countrySelect.innerHTML += `<option value="${country}">${country}</option>`;
+        });
+
+        // Render the state checkbox list, marking states already scraped for selected categories
+        function renderStates() {
+            const country = countrySelect.value;
+            const selectedCats = getSelectedCategories();
+            if (!country || !COUNTRY_STATE_CITIES[country]) {
+                statesList.innerHTML = '<span class="text-gray-400 italic col-span-2 px-2 py-1">Select a country first</span>';
+                return;
+            }
+            const stateNames = Object.keys(COUNTRY_STATE_CITIES[country]);
+            const perState = stateNames.map(s => progressForState(s, selectedCats));
+            const doneCount = perState.filter(p => p.complete).length;
+            const allDone = selectedCats.length > 0 && doneCount === stateNames.length;
+
+            statesList.innerHTML = stateNames.map((state, i) => {
+                const p = perState[i];
+                let badge = '';
+                if (p.complete) {
+                    badge = '<span class="ml-1 text-[10px] font-bold text-green-600 border border-green-400 rounded px-1">✓ DONE</span>';
+                } else if (p.done > 0) {
+                    // Partial: show how far along this state is so the badge is
+                    // honest about a run that is only partway through.
+                    badge = `<span class="ml-1 text-[10px] font-bold text-amber-600 border border-amber-400 rounded px-1">${p.done}/${p.total}</span>`;
+                }
+                const bg = p.complete ? 'bg-green-50' : (p.done > 0 ? 'bg-amber-50' : '');
+                return `<label class="flex items-center space-x-2 px-2 py-1 rounded hover:bg-white cursor-pointer ${bg}">
+                    <input type="checkbox" value="${state}" class="campaign-state h-4 w-4 text-blue-600 rounded">
+                    <span>${state}${badge}</span>
+                </label>`;
+            }).join('') + (allDone ? '<div class="col-span-2 text-xs text-amber-600 px-2 py-1">⚠ All states for the selected categories are already scraped. Pick different categories or reset progress.</div>' : '');
+        }
+
+        countrySelect.onchange = () => { renderStates(); refreshCityListFromStates(); };
+
+        // Re-render badges whenever category selection changes
+        document.querySelectorAll('.campaign-cat').forEach(cb => cb.addEventListener('change', renderStates));
+
+        document.getElementById('selectAllStatesBtn').onclick = () => {
+            statesList.querySelectorAll('.campaign-state').forEach(cb => cb.checked = true);
+            refreshCityListFromStates();
+        };
+        document.getElementById('clearStatesBtn').onclick = () => {
+            statesList.querySelectorAll('.campaign-state').forEach(cb => cb.checked = false);
+            refreshCityListFromStates();
+        };
+
+        // Keep the cities textarea in sync with the checked states
+        function refreshCityListFromStates() {
+            const country = countrySelect.value;
+            const states = getSelectedStates();
+            if (!country || states.length === 0) return;
+            const cities = states.flatMap(s => COUNTRY_STATE_CITIES[country][s] || []);
+            const unique = [...new Set(cities)];
+            const existing = citiesTextarea.value.split('\n').map(c => c.trim()).filter(Boolean);
+            citiesTextarea.value = [...new Set([...existing, ...unique])].join('\n');
+        }
+        statesList.addEventListener('change', refreshCityListFromStates);
+
+        document.getElementById('addStateCitiesBtn').onclick = refreshCityListFromStates;
+
+        document.getElementById('resetProgressBtn').onclick = async () => {
+            if (!confirm('This will erase the saved "done" history for all categories and states. Continue?')) return;
+            try {
+                await fetch('/campaign/progress/reset', { method: 'POST' });
+                await loadCampaignProgress();
+                renderStates();
+                alert('Progress history cleared.');
+            } catch (e) { alert('Error: ' + e.message); }
+        };
+
+        document.getElementById('generateCampaignBtn').onclick = () => {
+            const checkedCats = getSelectedCategories();
+            const states = getSelectedStates();
+            const cityText = document.getElementById('campaignCities').value;
+            const cities = cityText.split(/[\n,]/).map(c => c.trim()).filter(Boolean);
+
+            if (checkedCats.length === 0) {
+                alert('Please select at least one category.');
+                return;
+            }
+            if (states.length === 0 && cities.length === 0) {
+                alert('Please select at least one state (or enter cities manually).');
+                return;
+            }
+
+            // Build a query per category + city, grouped by state for the preview
+            const queueByState = {};
+            for (const cat of checkedCats) {
+                for (const state of states) {
+                    const stateCities = (COUNTRY_STATE_CITIES[countrySelect.value] || {})[state] || [];
+                    stateCities.forEach(city => {
+                        queueByState[state] = queueByState[state] || [];
+                        queueByState[state].push(`${cat} ${city}`);
+                    });
+                }
+                // Any manually-typed cities not tied to a state
+                cities.forEach(city => {
+                    queueByState['Manual'] = queueByState['Manual'] || [];
+                    queueByState['Manual'].push(`${cat} ${city}`);
+                });
+            }
+
+            generatedQueue = Object.values(queueByState).flat();
+            const breakdown = Object.entries(queueByState)
+                .map(([state, qs]) => `<div class="flex justify-between"><span>${state === 'Manual' ? '✍ Manual cities' : '📍 ' + state}</span><span class="font-bold">${qs.length}</span></div>`).join('');
+
+            // Rough planning number, measured on the real campaign: 11 queries
+            // across 42 wall-clock minutes = ~3.8 min each (search + scroll +
+            // auto-sync + the inter-query delay). It is for sizing a run, not a
+            // promise — a big city scrolls far longer than a small one.
+            const MIN_PER_QUERY = 4;
+            const totalMinutes = generatedQueue.length * MIN_PER_QUERY;
+            const estimate = totalMinutes < 60
+                ? `~${totalMinutes} min`
+                : totalMinutes < 60 * 24
+                    ? `~${(totalMinutes / 60).toFixed(1)} hours`
+                    : `~${(totalMinutes / 60 / 24).toFixed(1)} days`;
+            const chainNote = checkedCats.length > 1
+                ? `<div class="mt-1 text-blue-700">🔗 Runs ${checkedCats.length} categories one after another: ${checkedCats.join(' → ')}</div>`
+                : '';
+
+            document.getElementById('campaignPreview').innerHTML =
+                `<div class="font-bold text-gray-800 mb-2">Total Queries: ${generatedQueue.length}</div>` +
+                `<div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3 text-xs">${breakdown}</div>` +
+                `<div class="mb-3 text-sm"><span class="text-gray-600">Estimated runtime: </span><span class="font-bold text-gray-800">${estimate}</span> <span class="text-gray-400 text-xs">(at ≈${MIN_PER_QUERY} min/query — rough estimate)</span></div>` +
+                chainNote +
+                `<div class="max-h-48 overflow-y-auto bg-gray-50 p-3 rounded border font-mono text-xs text-gray-600">${generatedQueue.join('<br>')}</div>`;
+
+            document.getElementById('startCampaignBtn').disabled = false;
+        };
+
+
+        // --- Campaign pause / resume ---
+        const pauseBtn = document.getElementById('pauseCampaignBtn');
+        const resumeBtn = document.getElementById('resumeCampaignBtn');
+        const campaignStartBtn = document.getElementById('startCampaignBtn');
+        const genBtn = document.getElementById('generateCampaignBtn');
+        async function refreshCampaignStatus() {
+            try {
+                const r = await fetch('/campaign/status');
+                if (!r.ok) return;
+                const s = await r.json();
+                const running = s.isProcessingQueue || s.hasProcess;
+                const paused = s.isPaused;
+                // Show Pause while running, Resume while paused, Start otherwise
+                campaignStartBtn.classList.toggle('hidden', running || paused);
+                pauseBtn.classList.toggle('hidden', !running || paused);
+                resumeBtn.classList.toggle('hidden', !paused);
+                genBtn.disabled = running || paused;
+            } catch (_) {}
+        }
+        // Poll while a campaign is active so the buttons flip without a hard refresh
+        setInterval(refreshCampaignStatus, 3000);
+        // Also refresh whenever a log line arrives (covers pause/complete/stop)
+        refreshCampaignStatus();
+
+        pauseBtn.onclick = async () => {
+            pauseBtn.disabled = true;
+            try {
+                const r = await fetch('/campaign/pause', { method: 'POST' });
+                if (!r.ok) { alert('Pause failed: ' + await r.text()); return; }
+                pauseBtn.classList.add('hidden');
+                resumeBtn.classList.remove('hidden');
+            } catch (e) { alert('Pause error: ' + e.message); }
+            finally { pauseBtn.disabled = false; await refreshCampaignStatus(); }
+        };
+        resumeBtn.onclick = async () => {
+            resumeBtn.disabled = true;
+            try {
+                const r = await fetch('/campaign/resume', { method: 'POST' });
+                if (!r.ok) { alert('Resume failed: ' + await r.text()); return; }
+                resumeBtn.classList.add('hidden');
+                pauseBtn.classList.remove('hidden');
+            } catch (e) { alert('Resume error: ' + e.message); }
+            finally { resumeBtn.disabled = false; await refreshCampaignStatus(); }
+        };
+        // Keep the original start handler's finally in sync with the new buttons
+        document.getElementById('startCampaignBtn').onclick = async () => {
+            const delaySec = parseInt(document.getElementById('campaignDelay').value) || 10;
+            const limit = parseInt(document.getElementById('campaignLimit').value) || 0;
+            const proxies = document.getElementById('campaignProxy').value.split('\n').map(p => p.trim()).filter(Boolean).join(',');
+
+            const cats = getSelectedCategories();
+            const states = getSelectedStates();
+            if (cats.length === 0) { alert('Select at least one category.'); return; }
+            if (states.length === 0) { alert('Select at least one state.'); return; }
+
+            const btn = document.getElementById('startCampaignBtn');
+            btn.disabled = true;
+            btn.innerHTML = '⏳ Starting...';
+
+            try {
+                const res = await fetch('/start-campaign', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        categories: cats,
+                        states: states,
+                        country: countrySelect.value,
+                        delaySeconds: delaySec,
+                        limit: limit,
+                        proxy: proxies
+                    })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    alert(`Campaign started with ${data.count} queries! Watch the console in the Scraper tab.`);
+                    switchTab('scraper');
+                } else {
+                    const err = await res.text();
+                    alert('Error: ' + err);
+                }
+            } catch (e) {
+                alert('Connection error: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '🚀 Start Campaign';
+            }
+        };
+
+        syncGSheetsBtn.onclick = async () => {
+            const originalText = syncGSheetsBtn.innerHTML;
+            syncGSheetsBtn.disabled = true;
+            syncGSheetsBtn.innerHTML = '⏳ Syncing...';
+
+            try {
+                const res = await fetch('/leads/sync-gsheets', { method: 'POST' });
+                if (res.ok) {
+                    const data = await res.json();
+                    alert(data.message);
+                } else {
+                    const err = await res.text();
+                    alert('Error syncing to Sheets: ' + err);
+                }
+            } catch (e) {
+                alert('Connection error: ' + e.message);
+            } finally {
+                syncGSheetsBtn.disabled = false;
+                syncGSheetsBtn.innerHTML = originalText;
+            }
+        };
+
+        function appendLog(text) {
+            const div = document.createElement('div');
+            div.className = 'console-log';
+            div.textContent = text;
+            consoleEl.appendChild(div);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+
+        function setStatus(status) {
+            switch(status) {
+                case 'idle': statusDot.className = 'status-dot bg-gray-500'; break;
+                case 'running': statusDot.className = 'status-dot bg-green-500 animate-pulse'; break;
+                case 'error': statusDot.className = 'status-dot bg-red-500'; break;
+            }
+        }
+
+        async function loadDashboardData() {
+            try {
+                const [statsRes, leadsRes] = await Promise.all([
+                    fetch('/leads/stats'),
+                    fetch('/leads')
+                ]);
+
+                const stats = await statsRes.json();
+                const leads = await leadsRes.json();
+                allLeads = leads;
+
+                statTotal.textContent = stats.total || 0;
+                statHot.textContent = stats.hotTargets || 0;
+                statWeb.textContent = stats.hasWebsite || 0;
+                statNoPhone.textContent = stats.noPhone || 0;
+
+                renderLeads(leads);
+            } catch (e) {
+                console.error('Error loading dashboard data:', e);
+            }
+        }
+
+        function renderLeads(leads) {
+            if (leads.length === 0) {
+                leadsTableBody.innerHTML = '<tr><td colspan="8" class="px-6 py-10 text-center text-gray-400 italic">No leads found.</td></tr>';
+                return;
+            }
+
+            leadsTableBody.innerHTML = '';
+            leads.forEach(lead => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50 transition';
+
+                let typeBadge = '<span class="text-gray-400">N/A</span>';
+                if (lead['Lead Type']) {
+                    const text = lead['Lead Type'];
+                    const color = text.includes('HOT') ? 'bg-green-100 text-green-700' :
+                                  text.includes('REAL') ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700';
+                    typeBadge = `<span class="px-2 py-1 rounded-full text-xs font-medium ${color}">${text}</span>`;
+                }
+
+                const gradeColors = { A: 'bg-purple-600 text-white', B: 'bg-blue-500 text-white', C: 'bg-gray-400 text-white', D: 'bg-red-400 text-white' };
+                const gradeBadge = `<span class="px-2 py-1 rounded font-bold text-xs ${gradeColors[lead.grade] || 'bg-gray-200'}">${lead.grade || 'N/A'}</span>`;
+
+                row.innerHTML = `
+                    <td class="px-6 py-4 text-center">${gradeBadge}</td>
+                    <td class="px-6 py-4 font-medium text-gray-900">${lead.Name || '---'}</td>
+                    <td class="px-6 py-4 text-gray-500">${lead['Phone 1'] || '---'}</td>
+                    <td class="px-6 py-4">
+                        ${lead.Website ? `<a href="${lead.Website}" target="_blank" class="text-blue-600 hover:underline truncate block max-w-xs">${lead.Website}</a>` : '---'}
+                    </td>
+                    <td class="px-6 py-4 text-gray-500">${lead.Email || '---'}</td>
+                    <td class="px-6 py-4 text-center">${lead.Rating || '---'} <span class="text-xs text-gray-400">(${lead.Reviews || 0})</span></td>
+                    <td class="px-6 py-4">${typeBadge}</td>
+                    <td class="px-6 py-4 text-center">
+                        <button onclick="openCRM(${lead['S.No']})" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 text-xs font-semibold transition">📞 Call</button>
+                    </td>
+                `;
+                leadsTableBody.appendChild(row);
+            });
+        }
+
+        let sortState = { key: null, dir: 1 };
+
+        function sortLeads(key) {
+            if (sortState.key === key) {
+                sortState.dir *= -1; // toggle direction
+            } else {
+                sortState = { key, dir: 1 };
+            }
+            // Update arrow indicators
+            document.querySelectorAll('[id^="sortArrow-"]').forEach(el => el.textContent = '');
+            const arrow = document.getElementById(`sortArrow-${key}`);
+            if (arrow) arrow.textContent = sortState.dir === 1 ? '▲' : '▼';
+            applySearchAndSort();
+        }
+        window.sortLeads = sortLeads;
+
+        function applySearchAndSort() {
+            const query = (leadSearch.value || '').toLowerCase();
+            let filtered = allLeads.filter(l =>
+                (l.Name && l.Name.toLowerCase().includes(query)) ||
+                (l.Category && l.Category.toLowerCase().includes(query)) ||
+                (l['Phone 1'] && l['Phone 1'].toLowerCase().includes(query))
+            );
+            if (sortState.key) {
+                const k = sortState.key, d = sortState.dir;
+                filtered = [...filtered].sort((a, b) => {
+                    const va = a[k] === undefined || a[k] === null ? '' : a[k];
+                    const vb = b[k] === undefined || b[k] === null ? '' : b[k];
+                    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * d;
+                    return String(va).localeCompare(String(vb)) * d;
+                });
+            }
+            renderLeads(filtered);
+        }
+
+        leadSearch.oninput = applySearchAndSort;
+
+        // CRM Logic
+        function openCRM(sno) {
+            currentLead = allLeads.find(l => l['S.No'] == sno);
+            if (!currentLead) return;
+
+            crmName.textContent = currentLead.Name || '---';
+            crmPhone.textContent = currentLead['Phone 1'] || '---';
+            crmEmail.textContent = currentLead.Email || '---';
+            crmWebsite.textContent = currentLead.Website || '---';
+            crmRating.textContent = `${currentLead.Rating || '0'} (${currentLead.Reviews || 0} reviews)`;
+            crmFollowUp.value = currentLead['Follow Up Date'] || '';
+            crmNotes.value = currentLead['Notes'] || '';
+
+            // Grade Badge
+            const gradeColors = { A: 'bg-purple-600 text-white', B: 'bg-blue-500 text-white', C: 'bg-gray-400 text-white', D: 'bg-red-400 text-white' };
+            document.getElementById('crmGradeBadge').innerHTML = `<span class="px-2 py-1 rounded font-bold text-xs ${gradeColors[currentLead.grade] || 'bg-gray-200'}">${currentLead.grade || 'N/A'}</span>`;
+
+            // Socials
+            const socials = [
+                { name: 'Facebook', url: currentLead.Facebook, color: 'bg-blue-600' },
+                { name: 'Instagram', url: currentLead.Instagram, color: 'bg-pink-600' },
+                { name: 'LinkedIn', url: currentLead.LinkedIn, color: 'bg-blue-700' },
+                { name: 'Twitter', url: currentLead.Twitter, color: 'bg-black' },
+            ];
+            const socialsContainer = document.getElementById('crmSocials');
+            socialsContainer.innerHTML = '';
+            socials.forEach(s => {
+                if (s.url) {
+                    socialsContainer.innerHTML += `<a href="${s.url}" target="_blank" class="${s.color} text-white px-3 py-1 rounded-full text-xs font-medium hover:opacity-80 transition">${s.name}</a>`;
+                }
+            });
+            if (socialsContainer.innerHTML === '') socialsContainer.innerHTML = '<span class="text-xs text-gray-400">No social profiles found</span>';
+
+            crmModal.classList.remove('hidden');
+        }
+
+        closeCrm.onclick = () => crmModal.classList.add('hidden');
+
+        closeViewer.onclick = () => leadViewerModal.classList.add('hidden');
+
+        async function viewFile(filename) {
+            leadViewerModal.classList.remove('hidden');
+            viewerTableContainer.innerHTML = '<div class="text-center py-10 text-gray-500">Loading leads...</div>';
+
+            try {
+                const res = await fetch(`/leads?file=${encodeURIComponent(filename)}`);
+                if (!res.ok) throw new Error('Failed to fetch leads');
+
+                const leads = await res.json();
+                if (leads.length === 0) {
+                    viewerTableContainer.innerHTML = '<div class="text-center py-10 text-gray-500">No leads found in this file.</div>';
+                    return;
+                }
+
+                // Generate table from lead keys
+                const headers = Object.keys(leads[0]);
+                let html = '<table class="w-full text-left border-collapse text-xs">';
+                html += '<thead class="bg-gray-100 text-gray-600 uppercase font-bold sticky top-0">';
+                html += '<tr>';
+                headers.forEach(h => {
+                    html += `<th class="px-4 py-2 border-b">${h}</th>`;
+                });
+                html += '</tr></thead>';
+                html += '<tbody>';
+
+                leads.forEach(lead => {
+                    html += '<tr class="hover:bg-gray-50">';
+                    headers.forEach(h => {
+                        let val = lead[h] || '---';
+                        if (typeof val === 'object') val = val.text || JSON.stringify(val);
+                        html += `<td class="px-4 py-2 border-b truncate max-w-xs">${val}</td>`;
+                    });
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table>';
+                viewerTableContainer.innerHTML = html;
+            } catch (e) {
+                viewerTableContainer.innerHTML = `<div class="text-center py-10 text-red-500">Error loading file: ${e.message}</div>`;
+            }
+        }
+
+        async function updateLeadStatus(action) {
+            if (!currentLead) return;
+
+            const updateData = {};
+            const timestamp = new Date().toLocaleString();
+
+            switch(action) {
+                case 'call_done':
+                    updateData['Call'] = 'Yes';
+                    break;
+                case 'not_call':
+                    updateData['Not Call'] = 'Yes';
+                    break;
+                case 'interested':
+                    updateData['Call'] = 'Yes';
+                    updateData['Asking for Detailed'] = 'Yes';
+                    break;
+                case 'rejected':
+                    updateData['Call'] = 'Yes';
+                    updateData['Directly Rejected'] = 'Yes';
+                    updateData['Not Call'] = 'Yes';
+                    updateData['What was discussed on call?'] = 'Not interested / Directly rejected offer';
+                    break;
+                case 'no_answer':
+                    updateData['Call'] = 'Pending';
+                    updateData['Not Call'] = 'No';
+                    updateData['What was discussed on call?'] = 'No answer / Switched off / Ringing';
+                    const prevNotes = currentLead['Notes'] || '';
+                    updateData['Notes'] = `${prevNotes} | [${timestamp}] No Answer`.trim();
+                    break;
+            }
+
+            try {
+                const res = await fetch('/leads/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ leadId: currentLead['S.No'], updateData })
+                });
+                if (res.ok) {
+                    alert('Status updated successfully!');
+                    loadDashboardData();
+                }
+            } catch (e) {
+                alert('Error updating status: ' + e.message);
+            }
+        }
+
+        saveCrmBtn.onclick = async () => {
+            if (!currentLead) return;
+
+            const updateData = {
+                'Follow Up Date': crmFollowUp.value,
+                'Notes': crmNotes.value,
+                'What was discussed on call?': crmNotes.value
+            };
+
+            try {
+                const res = await fetch('/leads/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ leadId: currentLead['S.No'], updateData })
+                });
+                if (res.ok) {
+                    alert('Lead notes saved!');
+                    loadDashboardData();
+                    crmModal.classList.add('hidden');
+                }
+            } catch (e) {
+                alert('Error saving lead: ' + e.message);
+            }
+        };
+
+        waBtn.onclick = () => {
+            const phone = String(currentLead['Phone 1'] || '').replace(/\D/g, '').slice(-10);
+            if (phone.length === 10) {
+                const msg = `Hello ${currentLead.Name}, I'm reaching out regarding your business.`;
+                window.open(`https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+            } else {
+                alert('Valid 10-digit mobile number not found.');
+            }
+        };
+
+        async function loadArchiveData() {
+            const archiveTableBody = document.getElementById('archiveTableBody');
+            try {
+                const res = await fetch('/files');
+                const files = await res.json();
+
+                if (files.length === 0) {
+                    archiveTableBody.innerHTML = '<tr><td colspan="4" class="px-6 py-10 text-center text-gray-400 italic">No files found in archive.</td></tr>';
+                    return;
+                }
+
+                archiveTableBody.innerHTML = '';
+                files.forEach(file => {
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-gray-50 transition';
+
+                    const date = new Date(file.date).toLocaleString();
+                    const size = (file.size / 1024).toFixed(2) + ' KB';
+
+                    row.innerHTML = `
+                        <td class="px-6 py-4 font-medium text-gray-900">${file.name}</td>
+                        <td class="px-6 py-4 text-gray-500">${date}</td>
+                        <td class="px-6 py-4 text-gray-500">${size}</td>
+                        <td class="px-6 py-4 text-center space-x-2">
+                            <button onclick="viewFile('${file.name.replace(/'/g, "\\'")}')"
+                                    class="text-xs bg-green-100 text-green-600 px-2 py-1 rounded hover:bg-green-200 font-medium">
+                                👁️ View
+                            </button>
+                            <a href="/download?file=${encodeURIComponent(file.name)}"
+                               class="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 font-medium">
+                               Download ⬇️
+                            </a>
+                            <button onclick="deleteFile('${file.name.replace(/'/g, "\\'")}')"
+                                    class="text-xs bg-red-50 text-red-500 px-2 py-1 rounded hover:bg-red-100 font-medium">
+                                🗑️ Delete
+                            </button>
+                        </td>
+                    `;
+                    archiveTableBody.appendChild(row);
+                });
+            } catch (e) {
+                console.error('Error loading archive data:', e);
+                archiveTableBody.innerHTML = '<tr><td colspan="4" class="px-6 py-10 text-center text-red-500">Error loading archive files.</td></tr>';
+            }
+        }
+
+        async function fetchFiles() {
+            try {
+                const res = await fetch('/files');
+                const files = await res.json();
+                if (files.length === 0) {
+                    fileListEl.innerHTML = '<p class="text-gray-400 italic text-sm col-span-2">No files generated yet.</p>';
+                    return;
+                }
+                fileListEl.innerHTML = '';
+                files.forEach(file => {
+                    // /files returns {name, date, size}, not bare strings; the
+                    // archive table already reads .name, this list has to too.
+                    const name = file.name;
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition';
+                    div.innerHTML = `
+                        <span class="text-sm text-gray-700 truncate mr-2">${name}</span>
+                        <div class="flex items-center space-x-2">
+                            <button onclick="viewFile('${name.replace(/'/g, "\\'")}')"
+                                   class="text-xs bg-green-100 text-green-600 px-2 py-1 rounded hover:bg-green-200 font-medium transition">
+                                👁️ View
+                            </button>
+                            <a href="/download?file=${encodeURIComponent(name)}"
+                               class="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 font-medium">
+                               Download ⬇️
+                            </a>
+                            <button onclick="deleteFile('${name.replace(/'/g, "\\'")}')"
+                                    class="text-xs bg-red-50 text-red-500 px-2 py-1 rounded hover:bg-red-100 font-medium transition">
+                                🗑️ Delete
+                            </button>
+                        </div>
+                    `;
+                    fileListEl.appendChild(div);
+                });
+            } catch (e) {
+                console.error('Error fetching files:', e);
+            }
+        }
+
+        async function deleteFile(filename) {
+            if (!confirm(`Are you sure you want to delete ${filename}? This action cannot be undone.`)) {
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/files/${encodeURIComponent(filename)}`, {
+                    method: 'DELETE'
+                });
+
+                if (res.ok) {
+                    alert('File deleted successfully.');
+                    fetchFiles();
+                } else {
+                    const err = await res.text();
+                    alert('Error deleting file: ' + err);
+                }
+            } catch (e) {
+                alert('Error deleting file: ' + e.message);
+            }
+        }
+
+
+        // Email lives on :3003 — no email JS on :3000.
+        socket.on('log', (text) => {
+            appendLog(text);
+        });
+
+        // The server emits one of these per finished city. Refreshing here is
+        // what makes the badges fill in during a run instead of on reload.
+        socket.on('progress', () => {
+            loadCampaignProgress().then(() => renderStates());
+        });
+
+        // The scraper prints its own "DONE!" banner after EVERY queued query, so
+        // reacting to that string kills the next query mid-run in a multi-query
+        // campaign. Only the server knows when the whole queue has drained, so
+        // wait for its explicit signal before resetting the UI.
+        socket.on('campaign-complete', () => {
+            loadCampaignProgress().then(() => renderStates());
+            stopScraper();
+        });
+
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+
+            const isMulti = document.getElementById('modeMulti').checked;
+            const data = {
+                query: isMulti ? null : document.getElementById('query').value,
+                multiQuery: isMulti ? document.getElementById('multiQuery').value : null,
+                city: document.getElementById('city').value,
+                areas: document.getElementById('areas').value,
+                limit: parseInt(document.getElementById('limit').value) || 0,
+                quick: document.getElementById('quick').checked,
+                headed: document.getElementById('headed').checked,
+                proxy: document.getElementById('proxy').value
+            };
+
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            stopBtn.classList.remove('hidden');
+            btnText.textContent = 'Scraping...';
+            loader.classList.remove('hidden');
+            setStatus('running');
+            consoleEl.innerHTML = '<div class="text-blue-400">Connecting to scraper...</div>';
+
+            try {
+                const res = await fetch('/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    throw new Error(errorText);
+                }
+
+            } catch (err) {
+                appendLog('❌ Error: ' + err.message);
+                setStatus('error');
+                stopScraper();
+            }
+        };
+
+        async function stopScraper() {
+            try {
+                await fetch('/stop', { method: 'POST' });
+            } catch (e) {}
+
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            stopBtn.classList.add('hidden');
+            btnText.textContent = '🚀 Start Scraping';
+            loader.classList.add('hidden');
+            setStatus('idle');
+            fetchFiles();
+        }
+
+        stopBtn.onclick = stopScraper;
+        clearConsoleBtn.onclick = () => consoleEl.innerHTML = '';
+        refreshFilesBtn.onclick = fetchFiles;
+        document.getElementById('refreshArchive').onclick = loadArchiveData;
+
+        fetchFiles();
+    </script>
+</body>
+</html>

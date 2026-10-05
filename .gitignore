@@ -16,9 +16,57 @@ Mumbai Data.xlsx
 .env.*
 *.log
 
+# Email stats runtime state (gitignored — copy with hand-off)
+email-events.json
+email-events.json.tmp
+email-imap-state.json
+.email-imap.lock
+
 # OS & Editor
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 universal-ai-purger/
+
+# Secrets — never push real credentials
+email-config.json
+gsheet-key.json
+email-suppression.json
+email-sent-log.json
+email-imap-state.json
+campaign-state.json
+campaign-progress.json
+campaign-progress.*.json
+leads.db
+nul
+UsersajbeDesktopprocdump.exe
+
+# Dev junk / one-off probes
+server.err
+server-*.log
+server.log
+server-out.log
+server-restart.log
+email-tool*.log
+*.err
+probe-*.js
+test-*.js
+verify-*.js
+debug_excel.js
+check-*.js
+dump-*.js
+find-*.js
+scan-*.js
+list-*.js
+measure-*.js
+drop-*.js
+inspect-*.js
+recover-*.js
+reconcile-*.js
+clean-*.js
+count-*.js
+tmp-*.js
+format-*.js
+fix-*.js
+stall-detector.js

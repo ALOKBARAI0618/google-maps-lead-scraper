@@ -38,6 +38,9 @@ function parseArgs() {
     output: '',
     quick: false,
     limit: 0,
+    proxy: '',
+    noAreas: false,
+    areaLabel: '',
   };
 
   let i = 0;
@@ -46,8 +49,11 @@ function parseArgs() {
     else if (args[i] === '--areas' && args[i + 1]) { opts.areas = args[i + 1].split(',').map(a => a.trim()); i += 2; }
     else if (args[i] === '--headed') { opts.headed = true; i++; }
     else if (args[i] === '--quick') { opts.quick = true; i++; }
+    else if (args[i] === '--no-areas') { opts.noAreas = true; i++; }
+    else if (args[i] === '--area-label' && args[i + 1]) { opts.areaLabel = args[i + 1]; i += 2; }
     else if (args[i] === '--limit' && args[i + 1]) { opts.limit = parseInt(args[i + 1], 10); i += 2; }
     else if (args[i] === '--output' && args[i + 1]) { opts.output = args[i + 1]; i += 2; }
+    else if (args[i] === '--proxy' && args[i + 1]) { opts.proxy = args[i + 1]; i += 2; }
     else if (!args[i].startsWith('--')) { opts.query = args[i]; i++; }
     else { i++; }
   }
@@ -59,6 +65,28 @@ function parseArgs() {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function rand(min, max) { return Math.floor(min + Math.random() * (max - min + 1)); }
 function humanPause(min, max) { return sleep(rand(min, max)); }
+
+async function safeGoto(page, url, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      return true;
+    } catch (err) {
+      const isNetworkError = err.message.includes('net::ERR_NAME_NOT_RESOLVED') ||
+                             err.message.includes('net::ERR_CONNECTION_REFUSED') ||
+                             err.message.includes('net::ERR_TIMED_OUT');
+
+      if (isNetworkError && i < retries - 1) {
+        const waitTime = (i + 1) * 5000;
+        log(`${colors.yellow}⚠ Network error detected. Retrying in ${waitTime/1000}s... (Attempt ${i+1}/${retries})${colors.reset}`);
+        await sleep(waitTime);
+      } else {
+        throw err;
+      }
+    }
+  }
+  return false;
+}
 
 function normalizeLeadText(value) {
   return (value || '').toLowerCase().replace(/&/g, ' and ')
@@ -98,6 +126,36 @@ function isRealWebsite(url) {
 function leadHasPhone(phones) {
   if (!Array.isArray(phones)) return false;
   return phones.some(p => String(p || '').replace(/\D/g, '').length >= 7);
+}
+
+// Keyword-based business classification: Premium / Small Business / Standard
+const PREMIUM_KEYWORDS = [
+  'luxury', 'premium', 'elite', 'gourmet', 'fine dining', 'boutique', 'resort',
+  'spa', 'country club', 'golf club', 'concierge', 'executive', 'signature',
+  'platinum', 'gold', 'royal', 'grand', 'the '
+];
+const CHAIN_KEYWORDS = ['inc', 'llc', 'corp', 'corporation', 'group', 'chains', 'franchise'];
+
+function classifyLead(lead, leadType) {
+  const name = (lead.name || '').toLowerCase();
+  const reviews = parseInt(lead.reviews, 10) || 0;
+  const rating = parseFloat(lead.rating) || 0;
+  const hasEmail = !!(lead.email && String(lead.email).includes('@'));
+  const hasSite = isRealWebsite(lead.website);
+
+  // No phone or no online presence at all -> low priority
+  if (leadType.includes('NO PHONE')) return 'Low Priority';
+
+  const isPremium = PREMIUM_KEYWORDS.some(k => name.includes(k));
+  const isChain = CHAIN_KEYWORDS.some(k => name.includes(k));
+
+  // Premium: strong reputation signals + full contact stack
+  if ((isPremium || (rating >= 4.5 && reviews >= 200)) && hasEmail && hasSite) return 'Premium';
+
+  // Established small business: decent reviews and at least a website or email
+  if (reviews >= 50 && (hasSite || hasEmail)) return isChain ? 'Chain/Enterprise' : 'Small Business';
+
+  return 'Standard';
 }
 
 // CRM tracking columns — standardized 7 options
@@ -140,6 +198,11 @@ async function saveExcel(leads, filePath) {
     { header: 'Phone 2',         key: 'phone2',   width: 18 },
     { header: 'Phone 3',         key: 'phone3',   width: 18 },
     { header: 'Website',         key: 'website',  width: 28 },
+    { header: 'Facebook',        key: 'facebook', width: 28 },
+    { header: 'Instagram',       key: 'instagram', width: 28 },
+    { header: 'LinkedIn',        key: 'linkedin', width: 28 },
+    { header: 'Twitter',         key: 'twitter', width: 28 },
+    { header: 'Lead Class',      key: 'leadClass', width: 18 },
   ];
 
   ws.columns = [...dataColumns, ...CRM_COLUMNS.map(c => ({ header: c.header, key: c.key, width: c.width }))];
@@ -201,6 +264,8 @@ async function saveExcel(leads, filePath) {
       mapsUrl: l.googleMapsUrl || '', area: l.scrapedFrom || '', status: l.status || '',
       leadType: leadType,
       phone1: phones[0] || '', phone2: phones[1] || '', phone3: phones[2] || '', website: l.website || '',
+      facebook: l.facebook || '', instagram: l.instagram || '', linkedin: l.linkedin || '', twitter: l.twitter || '',
+      leadClass: classifyLead(l, leadType),
     };
     for (const crm of CRM_COLUMNS) rowData[crm.key] = '';
 
@@ -322,44 +387,55 @@ function saveCSVQuick(leads, csvPath) {
   }
 }
 
-function loadExistingLeads(csvPath, allLeads, seenKeys) {
-  const checkPaths = [csvPath, csvPath.replace(/\.csv$/i, '-partial.csv')];
-  let loadedFile = null;
-  for (const p of checkPaths) {
-    if (fs.existsSync(p)) { loadedFile = p; break; }
-  }
-  if (!loadedFile) return;
-
+async function loadExistingXlsx(filePath, allLeads, seenKeys) {
+  if (!fs.existsSync(filePath)) return;
   try {
-    const content = fs.readFileSync(loadedFile, 'utf8');
-    const lines = content.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    if (lines.length <= 1) return;
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.readFile(filePath);
+    const ws = wb.getWorksheet('Leads') || wb.worksheets[0];
+    const headerRow = ws.getRow(1).values;
 
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(',').map(c => c.replace(/^"|"$/g, '').replace(/""/g, '"').trim());
-      if (cols.length >= 2 && cols[1]) {
-        const lead = {
-          name: cols[1] || '',
-          category: cols[2] || '',
-          address: cols[3] || '',
-          rating: cols[4] || '',
-          reviews: cols[5] || '',
-          email: cols[6] || '',
-          scrapedFrom: cols[7] || '',
-          status: cols[8] || '',
-          phones: [cols[9], cols[10], cols[11]].filter(Boolean),
-          website: cols[12] || '',
-        };
-        const key = leadDedupeKey(lead);
-        if (key && !seenKeys.has(key)) {
-          seenKeys.add(key);
-          allLeads.push(lead);
+    ws.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const lead = {};
+      row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+        const header = headerRow[colNum];
+        if (header) {
+          let val = cell.value;
+          if (val && typeof val === 'object' && val.text) val = val.text;
+          lead[header] = val;
         }
+      });
+
+      // Map Excel headers back to scraper internal keys
+      const internalLead = {
+        name: lead['Name'],
+        category: lead['Category'],
+        address: lead['Address'],
+        rating: lead['Rating'],
+        reviews: lead['Reviews'],
+        email: lead['Email'],
+        googleMapsUrl: lead['Google Maps URL'],
+        scrapedFrom: lead['Area'],
+        status: lead['Status'],
+        leadClass: lead['Lead Class'],
+        phones: [lead['Phone 1'], lead['Phone 2'], lead['Phone 3']].filter(Boolean),
+        website: lead['Website'],
+        facebook: lead['Facebook'],
+        instagram: lead['Instagram'],
+        linkedin: lead['LinkedIn'],
+        twitter: lead['Twitter'],
+      };
+
+      const key = leadDedupeKey(internalLead);
+      if (key && !seenKeys.has(key)) {
+        seenKeys.add(key);
+        allLeads.push(internalLead);
       }
-    }
-    log(`${colors.green}✓ Resumed session: Loaded ${allLeads.length} leads from previous file (${path.basename(loadedFile)})${colors.reset}`);
+    });
+    log(`${colors.green}✓ Resumed from Excel: Loaded ${allLeads.length} leads from ${path.basename(filePath)}${colors.reset}`);
   } catch (err) {
-    log(`${colors.yellow}⚠ Could not parse existing CSV state: ${err.message}${colors.reset}`);
+    log(`${colors.yellow}⚠ Could not load existing Excel file: ${err.message}${colors.reset}`);
   }
 }
 
@@ -393,7 +469,7 @@ function logLead(index, total, lead) {
  */
 function extractDetailPanelScript() {
   return `() => {
-    const lead = { name: '', category: '', address: '', phones: [], website: '', rating: '', reviews: '', email: '', googleMapsUrl: window.location.href };
+    const lead = { name: '', category: '', address: '', phones: [], website: '', rating: '', reviews: '', email: '', googleMapsUrl: window.location.href, facebook: '', instagram: '', linkedin: '', twitter: '' };
 
     // Name
     const nameEl = document.querySelector('h1.DUwDvf') || document.querySelector('.DUwDvf') || document.querySelector('.fontHeadlineLarge');
@@ -470,6 +546,16 @@ function extractDetailPanelScript() {
       }
     }
 
+    // Social Media
+    const links = document.querySelectorAll('a[href^="http"]');
+    for (const a of links) {
+      const href = a.href.toLowerCase();
+      if (href.includes('facebook.com')) lead.facebook = a.href;
+      else if (href.includes('instagram.com')) lead.instagram = a.href;
+      else if (href.includes('linkedin.com')) lead.linkedin = a.href;
+      else if (href.includes('twitter.com') || href.includes('x.com')) lead.twitter = a.href;
+    }
+
     return lead;
   }`;
 }
@@ -487,7 +573,7 @@ function extractCardsScript() {
       const link = card.querySelector('a.hfpxzc') || card.querySelector('a[href*="/maps/place/"]');
       if (!link || !link.href || !link.href.includes('/maps/place/')) continue;
 
-      const lead = { name: '', category: '', address: '', phones: [], website: '', rating: '', reviews: '', email: '', googleMapsUrl: link.href };
+      const lead = { name: '', category: '', address: '', phones: [], website: '', rating: '', reviews: '', email: '', googleMapsUrl: link.href, facebook: '', instagram: '', linkedin: '', twitter: '' };
 
       // Name
       const nameEl = card.querySelector('.qBF1Pd') || card.querySelector('.fontHeadlineSmall');
@@ -507,15 +593,52 @@ function extractCardsScript() {
       }
 
       // Category & Address from info lines
+      //
+      // Google renders each card's info line twice. The visible copy glues the
+      // street address to the business description and the hours with no
+      // separator - "199 N 8th StUpscale eatery with local, seasonal fareClosed"
+      // - and textContent returns that as a single string, so splitting on the
+      // separator welds the description onto the address. The second copy omits
+      // the description and gives each field its own span, with the address
+      // prefixed by the separator: "\u00B7 199 N 8th St". Prefer that span.
+      const STREET = /\\b(st|street|ave|avenue|blvd|boulevard|rd|road|dr|drive|ln|lane|ct|court|way|pl|place|cir|circle|pkwy|suite|ste|highway|hwy|rt|route)\\b|,\\s*[A-Z]{2}\\s*\\d{5}/i;
+      // Hours text can be glued to the END of the category with no separator -
+      // "PlumberOpen 24 hours", "RemodelerClosed" - because the info line is
+      // one rendered string and the hours word is capitalized, so the seam is
+      // a lowercase letter run straight into a capital hours word. Match that
+      // seam and keep the letter; a category merely CONTAINING those letters
+      // never matches, because the hours word must be the final run.
+      const HOURS_TAIL = /([a-z])\\s*(?:open|closed|opens|closes)(?:\\s*(?:24\\s*hours?|[0-9]{1,2}(?::[0-9]{2})?\\s*(?:am|pm)?|now))*\\s*$/i;
+      // A part that is only hours ("Closes 5 pm", "Opens 7 am Mon") or only a
+      // phone number still contains digits, so the /[0-9]/ test below alone
+      // would accept it as a street address. Reject both.
+      const ONLY_HOURS = /^(?:open|closed|opens|closes)?\\s*(?:(?:[0-9]{1,2}(?::[0-9]{2})?\\s*(?:am|pm)?)|24\\s*hours?|now|(?:mon|tues|wed|thu|fri|sat|sun)[a-z]*)(?:\\s+(?:(?:[0-9]{1,2}(?::[0-9]{2})?\\s*(?:am|pm)?)|24\\s*hours?|now|(?:mon|tues|wed|thu|fri|sat|sun)[a-z]*))*\\s*$/i;
+      const ONLY_PHONE = /^\\+?[0-9][0-9\\s().-]*$/;
+      let fallbackAddr = '';
       for (const b of card.querySelectorAll('.W4Efsd')) {
         const txt = b.textContent.replace(/[\u2022\u00B7\u22C5]/g, '\u00B7').trim();
         if (!txt.includes('\u00B7')) continue;
         const parts = txt.split('\u00B7').map(s => s.trim()).filter(Boolean);
-        if (!lead.category && parts[0] && !/^(open|closed|opens|closes)/i.test(parts[0])) lead.category = parts[0];
-        const addr = parts.slice(1).find(p => /[0-9]/.test(p) && !/review|star/i.test(p));
-        if (!lead.address && addr) lead.address = addr;
-        if (lead.category) break;
+        if (!lead.category && parts[0] && !/^(open|closed|opens|closes)/i.test(parts[0])) lead.category = parts[0].replace(HOURS_TAIL, '$1').trim();
+        if (!fallbackAddr) {
+          const guess = parts.slice(1).find(p => /[0-9]/.test(p) && !/review|star/i.test(p) && !ONLY_HOURS.test(p) && !ONLY_PHONE.test(p));
+          if (guess) fallbackAddr = guess;
+        }
+        if (!lead.address) {
+          for (const sp of b.children) {
+            const t = (sp.textContent || '').replace(/[•·⋅]/g, '·').trim();
+            if (t.startsWith('\u00B7') && /[0-9]/.test(t) && STREET.test(t) && !/review|star/i.test(t)) {
+              lead.address = t.replace(/^\u00B7\\s*/, '').trim();
+              break;
+            }
+          }
+        }
+        if (lead.category && lead.address) break;
       }
+      // Only fall back to the joined-text guess when no block rendered the
+      // dedicated address span, so a glued description never wins merely
+      // because its block comes first.
+      if (!lead.address) lead.address = fallbackAddr;
 
       // Phones — capture all visible phone numbers
       const phoneSpans = card.querySelectorAll('.UsdlK');
@@ -532,6 +655,15 @@ function extractCardsScript() {
         for (const a of card.querySelectorAll('a[href^="http"]')) {
           if (!SKIP.test(a.href)) { lead.website = a.href; break; }
         }
+      }
+
+      // Social Media
+      for (const a of card.querySelectorAll('a[href^="http"]')) {
+        const href = a.href.toLowerCase();
+        if (href.includes('facebook.com')) lead.facebook = a.href;
+        else if (href.includes('instagram.com')) lead.instagram = a.href;
+        else if (href.includes('linkedin.com')) lead.linkedin = a.href;
+        else if (href.includes('twitter.com') || href.includes('x.com')) lead.twitter = a.href;
       }
 
       leads.push(lead);
@@ -628,13 +760,31 @@ async function scrollToLoadAll(page) {
   await sleep(1000);
 }
 
+
+// Fail fast when a proxy is unreachable, instead of wedging the first query for minutes.
+async function checkProxyReachable(proxyUrl) {
+  try {
+    const u = new URL(proxyUrl);
+    const mod = u.protocol === 'https:' ? require('https') : require('http');
+    await new Promise((resolve, reject) => {
+      const req = mod.request({ host: u.hostname, port: u.port || (u.protocol === 'https:' ? 443 : 80), method: 'CONNECT', path: 'oauth2.googleapis.com:443', timeout: 4000 }, (res) => { res.destroy(); resolve(); });
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('proxy connect timeout')); });
+      req.end();
+    });
+  } catch (e) { throw new Error('Proxy unreachable (' + proxyUrl + '): ' + e.message); }
+}
 async function scrapeArea(page, keyword, areaName, allLeads, seenKeys) {
-  const searchQuery = areaName ? `${keyword} ${areaName}` : keyword;
+  // A campaign query is already qualified ("Restaurants Birmingham Alabama
+  // USA"), so appending the label would only distort the search. The label is
+  // still recorded on each lead via scrapedFrom below.
+  const alreadyHas = areaName && keyword.toLowerCase().includes(areaName.toLowerCase());
+  const searchQuery = (areaName && !alreadyHas) ? `${keyword} ${areaName}` : keyword;
   log(`${colors.bold}Searching: "${searchQuery}"${colors.reset}`);
 
   // Navigate directly via URL — much more reliable than typing into search box
   const searchUrl = `https://www.google.com/maps/search/${encodeURIComponent(searchQuery)}`;
-  await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await safeGoto(page, searchUrl);
 
   // Handle consent dialog if it appears (Google cookie consent)
   try {
@@ -828,22 +978,36 @@ ${colors.bold}Options:${colors.reset}
   // Detect city and areas from query
   globalOpts = opts;
   const fullQuery = opts.city ? `${opts.query} ${opts.city}` : opts.query;
-  const detected = detectCityAndAreas(fullQuery);
+  let detected = detectCityAndAreas(fullQuery);
 
   let keyword = opts.query;
   let areas = opts.areas;
 
-  if (detected && !areas.length) {
-    keyword = detected.keyword || opts.query;
-    // Include the city itself as the first area + all sub-areas
-    const cityName = detected.city.charAt(0).toUpperCase() + detected.city.slice(1);
-    areas = [cityName, ...detected.areas];
-    log(`Detected city: ${colors.bold}${detected.city}${colors.reset} with ${areas.length} areas (including ${cityName} itself)`);
+  // Campaign mode passes a fully-qualified query ("Restaurants Birmingham
+  // Alabama USA") and asks for no area expansion. That expansion is keyed on
+  // the city name alone, so "Birmingham" pulls in Digbeth and Selly Oak -
+  // neighborhoods of Birmingham, England. Searching the qualified string as a
+  // single query keeps Google pinned to the intended place.
+  if (opts.noAreas) {
+    areas = [];
+    detected = null;
+    log(`${colors.yellow}Single-search mode (--no-areas): "${opts.query}"${colors.reset}`);
+  } else if (detected && !areas.length) {
+    const queryLower = opts.query.toLowerCase();
+    const cityLower = detected.city.toLowerCase();
+
+    if (queryLower.includes(cityLower)) {
+      keyword = detected.keyword || opts.query;
+      const cityName = detected.city.charAt(0).toUpperCase() + detected.city.slice(1);
+      areas = [cityName, ...detected.areas];
+      log(`Detected city: ${colors.bold}${detected.city}${colors.reset} with ${areas.length} areas (including ${cityName} itself)`);
+    } else {
+      log(`${colors.yellow}Smart detection suggested ${detected.city}, but it doesn't match the query. Using single search instead.${colors.reset}`);
+    }
   } else if (!areas.length) {
     log(`${colors.yellow}No city detected. Scraping single search: "${opts.query}"${colors.reset}`);
   }
 
-  // Setup clean output path (e.g. Delhi Builder Leads.xlsx)
   const timestamp = new Date().toISOString().slice(0, 10);
   const cityRaw = detected ? detected.city : (opts.city || '');
   const cityClean = cityRaw ? cityRaw.charAt(0).toUpperCase() + cityRaw.slice(1) : '';
@@ -862,52 +1026,53 @@ ${colors.bold}Options:${colors.reset}
   log(`Mode: ${opts.headed ? 'Visible browser' : 'Headless (background)'}`);
   console.log('');
 
-  // Launch browser
-  log('Launching browser...');
-  const browser = await chromium.launch({
-    headless: !opts.headed,
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--lang=en-US',
-    ]
-  });
-
-  const context = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    locale: 'en-US',
-    viewport: { width: 1280, height: 900 },
-  });
-
-  const page = await context.newPage();
-
-  // Block unnecessary resources for speed
-  await page.route('**/*.{png,jpg,jpeg,gif,svg,ico,woff,woff2,ttf}', route => route.abort());
-  await page.route('**/maps/vt/**', route => route.abort());
-  await page.route('**/maps/api/js/ViewportInfoService**', route => route.abort());
-
   const allLeads = [];
   const seenKeys = new Set();
+  await loadExistingXlsx(outputPath, allLeads, seenKeys);
 
-  // Resume from previous CSV if it exists
-  loadExistingLeads(outputPath.replace(/\.xlsx$/i, '.csv'), allLeads, seenKeys);
+  // Proxy Rotation Setup
+  const proxies = opts.proxy ? opts.proxy.split(',').map(p => p.trim()) : [];
+  let proxyIdx = 0;
 
+  // Hoisted out of the try so the catch below can reach it: a throw while the
+  // browser is open must close it, otherwise the process lingers as a zombie
+  // child and the queue - which advances on the child's close event - stalls
+  // forever. This is what wedged the queue for ~3h on the Edmond run.
+  let browser = null;
   try {
-    // No initial Maps navigation needed — scrapeArea navigates directly via URL
-
     if (areas.length > 0) {
-      // Multi-area scraping
       log(`${colors.bold}Starting multi-area scrape: ${areas.length} areas${colors.reset}`);
       console.log('');
 
       for (let i = 0; i < areas.length; i++) {
         const area = areas[i];
+        const currentProxy = proxies.length > 0 ? proxies[proxyIdx % proxies.length] : null;
+
         log(`${colors.cyan}[${i + 1}/${areas.length}]${colors.reset} Area: ${colors.bold}${area}${colors.reset}`);
+        if (currentProxy) {
+            log(`${colors.dim}Using proxy: ${currentProxy}${colors.reset}`);
+            if (proxyIdx === 0) { try { await checkProxyReachable(currentProxy); } catch(e){ console.error(e.message); process.exit(2); } }
+        }
+
+        // Launch fresh browser for each area to rotate proxy and clear session
+        browser = await launchBrowser(currentProxy, opts.headed);
+        const context = await browser.newContext({
+          userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          locale: 'en-US',
+          viewport: { width: 1280, height: 900 },
+        });
+        const page = await context.newPage();
+
+        // Block unnecessary resources
+        await page.route('**/*.{png,jpg,jpeg,gif,svg,ico,woff,woff2,ttf}', route => route.abort());
+        await page.route('**/maps/vt/**', route => route.abort());
+        await page.route('**/maps/api/js/ViewportInfoService**', route => route.abort());
+
         await scrapeArea(page, keyword, area, allLeads, seenKeys);
 
-        // Pause between areas
+        await browser.close();
+        proxyIdx++;
+
         if (i < areas.length - 1) {
           const pause = rand(AREA_PAUSE_MIN, AREA_PAUSE_MAX);
           log(`${colors.dim}Pausing ${(pause / 1000).toFixed(1)}s before next area...${colors.reset}`);
@@ -915,13 +1080,27 @@ ${colors.bold}Options:${colors.reset}
         }
       }
     } else {
-      // Single search
-      await scrapeArea(page, keyword, '', allLeads, seenKeys);
+      // The qualified campaign query already names the city, so it goes to
+      // scrapeArea as the label only - scrapeArea will not append it again.
+      const finalArea = opts.areaLabel || opts.city || '';
+      const currentProxy = proxies.length > 0 ? proxies[0] : null;
+      if (currentProxy) { try { await checkProxyReachable(currentProxy); } catch(e){ console.error(e.message); process.exit(2); } }
+      browser = await launchBrowser(currentProxy, opts.headed);
+      const context = await browser.newContext({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        locale: 'en-US',
+        viewport: { width: 1280, height: 900 },
+      });
+      const page = await context.newPage();
+      await page.route('**/*.{png,jpg,jpeg,gif,svg,ico,woff,woff2,ttf}', route => route.abort());
+      await page.route('**/maps/vt/**', route => route.abort());
+      await page.route('**/maps/api/js/ViewportInfoService**', route => route.abort());
+
+      await scrapeArea(page, keyword, finalArea, allLeads, seenKeys);
+      await browser.close();
     }
 
-    // Final save (Excel ONLY)
     await saveExcel(allLeads, outputPath);
-
     console.log('');
     log(`${colors.bold}${colors.green}========================================${colors.reset}`);
     log(`${colors.bold}${colors.green}  DONE! ${allLeads.length} leads scraped${colors.reset}`);
@@ -931,17 +1110,43 @@ ${colors.bold}Options:${colors.reset}
 
   } catch (err) {
     console.error(`\n${colors.red}Error: ${err.message}${colors.reset}`);
-    // Save whatever we have
     if (allLeads.length > 0) {
       saveCSVQuick(allLeads, outputPath.replace(/\.xlsx$/i, '-partial.csv'));
       log(`${colors.yellow}Saved ${allLeads.length} leads collected before error${colors.reset}`);
     }
-  } finally {
-    await browser.close();
+    // Force-exit so the queue advances. Previously this catch fell off the end
+    // of main() with the browser still open: the child never emitted 'close',
+    // so server.js's queue stalled and the run looked busy while doing nothing.
+    // Race the close against a timeout - the browser may be the wedged thing
+    // that caused the error, and a hanging close() would reintroduce the stall.
+    if (browser) {
+      await Promise.race([
+        browser.close().catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
+    }
+    process.exit(1);
   }
+}
+
+async function launchBrowser(proxy, headed) {
+  const launchOpts = {
+    headless: !headed,
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--lang=en-US',
+    ]
+  };
+  if (proxy) {
+    launchOpts.args.push(`--proxy-server=${proxy}`);
+  }
+  return await chromium.launch(launchOpts);
 }
 
 main().catch(err => {
   console.error(`Fatal: ${err.message}`);
   process.exit(1);
-});
+});;

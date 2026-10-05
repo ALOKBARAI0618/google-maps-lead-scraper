@@ -1,0 +1,69 @@
+# Runs the lead scraper as a long-lived service on the Raspberry Pi.
+#
+# The volume mounts are the important part: campaign-progress.json,
+# campaign-state.json, leads.db and output/ all live on the host. A `docker
+# compose build` after a code change must not be able to wipe a running
+# campaign's progress, which is why none of them are in the image.
+services:
+  scraper:
+    build:
+      context: .
+      # Pi 4B is arm64; building natively on the Pi avoids slow emulation.
+      platform: linux/arm64
+    image: maps-lead-scraper:latest
+    container_name: lead-scraper
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    # Chromium is started with --disable-dev-shm-usage by the scraper itself,
+    # but the default 64MB /dev/shm can still starve a large scroll session.
+    # /dev/shm is shared with the host kernel, so it is not a security
+    # boundary here - widening it only affects this container.
+    shm_size: "2gb"
+
+    environment:
+      # Point at the same sheet your PC uses, OR a separate one. Do not sync
+      # from both machines - the append-with-dedupe check is a race when two
+      # writers run at once.
+      GSHEET_KEY_FILE: /run/secrets/gsheet-key.json
+      # Uncomment to give the Pi its own spreadsheet instead of sharing.
+      # GSHEET_SPREADSHEET_ID: <your-second-spreadsheet-id>
+
+    volumes:
+      # Progress and state survive image rebuilds.
+      - ./data/campaign-progress.json:/app/campaign-progress.json
+      - ./data/campaign-state.json:/app/campaign-state.json
+      - ./data/leads.db:/app/leads.db
+      # Scraped workbooks. This directory grows; the host disk is larger than
+      # the container's writable layer and is easier to back up.
+      - ./output:/app/output
+
+    # A headless browser leaks if the container dies mid-scrape; stopping
+    # cleanly lets the close handler mark the in-flight city failed rather than
+    # leaving a zombie that the queue waits on forever.
+    stop_grace_period: 30s
+    stop_signal: SIGTERM
+
+    # Resource bounds so the scraper cannot starve Jenkins or the OS. The Pi 4B
+    # has 8GB; 3.5GB leaves room for the OS, Jenkins, and container overhead.
+    # A 28k-row scroll peak measured ~1.6GB, so this has headroom.
+    mem_limit: 3.5g
+    mem_reservation: 1g
+
+    # Health check is not used to restart the service (restart: unless-stopped
+    # already covers a crash) but lets Jenkins and you tell "slow" from "dead".
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:3000/"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    secrets:
+      - gsheet-key
+
+secrets:
+  gsheet-key:
+    file: ./gsheet-key.json
